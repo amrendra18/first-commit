@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="t">
+  <title id="t">first-commit: No more setting up hooks by hand.</title>
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .cmd { font-size: 60px; fill: #e6edf3; }
+    .tag { font-size: 30px; fill: #8b949e; }
+    .ok { font-size: 26px; fill: #e6edf3; }
+  </style>
+  <rect width="1280" height="320" fill="#161b22"/>
+  <rect width="1280" height="56" fill="#1f252d"/>
+  <path d="M0 56 H1280" stroke="#3d444d" stroke-width="2"/>
+  <circle cx="40" cy="28" r="9" fill="#6e7681"/>
+  <circle cx="70" cy="28" r="9" fill="#6e7681"/>
+  <circle cx="100" cy="28" r="9" fill="#6e7681"/>
+  <text class="cmd" x="64" y="140"><tspan fill="#3fb950">$</tspan> <tspan font-weight="700">first-commit</tspan> <tspan fill="#8b949e">setup</tspan></text>
+  <text class="tag" x="64" y="200"># No more setting up hooks by hand.</text>
+  <g fill="none" stroke="#3fb950" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M66 258 L75 267 L92 248"/>
+    <path d="M436 258 L445 267 L462 248"/>
+    <path d="M806 258 L815 267 L832 248"/>
+  </g>
+  <text class="ok" x="106" y="268">starter files</text>
+  <text class="ok" x="476" y="268">signing on</text>
+  <text class="ok" x="846" y="268">hooks installed</text>
+</svg>

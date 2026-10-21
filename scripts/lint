@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+mode="${1:-fast}"
+
+usage() {
+  printf '%s\n' \
+    'Usage: scripts/lint [fast|types]' \
+    '' \
+    'Checks every bin/ and scripts/ file by its first line: #!/bin/bash or' \
+    '#!/usr/bin/env python3. Any other first line stops lint with exit 1.' \
+    '' \
+    'fast   Default. bash -n, ruff lint and format checks, and shellcheck. The' \
+    '       pre-commit hook runs it.' \
+    'types  mypy strict, and pylint duplicate-code, cyclic-import,' \
+    '       redefined-outer-name and 500-line checks. scripts/check runs it' \
+    '       after fast.'
+}
+
+case "$#:$mode" in
+  0:* | 1:fast | 1:types) ;;
+  1:-h | 1:--help)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'error: unknown lint mode\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+  export PATH="$project_dir/.venv/bin:$PATH"
+fi
+cd "$project_dir"
+
+python_paths=(src tests scripts/verify_lib)
+python_scripts=()
+shell_scripts=()
+for path in bin/* scripts/*; do
+  [[ -f "$path" ]] || continue
+  first=''
+  IFS= read -r first <"$path" || true
+  case "$first" in
+    '#!/usr/bin/env python3') python_scripts+=("$path") ;;
+    '#!/bin/bash') shell_scripts+=("$path") ;;
+    *)
+      printf 'error: %s has no #!/bin/bash or #!/usr/bin/env python3 line; ' "$path" >&2
+      printf 'scripts/lint checks only those.\n' >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$mode" == fast ]]; then
+  for path in "${shell_scripts[@]}"; do
+    /bin/bash -n "$path"
+  done
+  python3 -m ruff check "${python_paths[@]}" "${python_scripts[@]}"
+  python3 -m ruff format --check "${python_paths[@]}" "${python_scripts[@]}"
+  shellcheck -o check-extra-masked-returns "${shell_scripts[@]}"
+else
+  python3 -m mypy "${python_paths[@]}"
+  # One run per script: mypy maps each extensionless script to the module __main__.
+  for path in "${python_scripts[@]}"; do
+    python3 -m mypy "$path"
+  done
+  python3 -m pylint src/first_commit tests scripts/verify_lib "${python_scripts[@]}"
+fi

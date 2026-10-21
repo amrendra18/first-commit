@@ -1,0 +1,111 @@
+#!/bin/bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+matrix_versions='3.11 3.12 3.13 3.14'
+
+usage() {
+  printf '%s\n' \
+    'Usage: scripts/release' \
+    '' \
+    'Checks that HEAD can be released as v<version>, the version in' \
+    'src/first_commit/__init__.py: the working tree is clean, HEAD is on a branch,' \
+    'the tag is new or already names HEAD, and README.md installs that tag.' \
+    'Then runs scripts/check full, scripts/check matrix, scripts/verify full, and' \
+    'scripts/verify control, and prints the tag, the commit it names, and the push' \
+    'commands. It never tags or pushes.' \
+    '' \
+    'The matrix needs every CI Python, 3.11 to 3.14: a cpython-<version>.* build of' \
+    'each in the folder FIRST_COMMIT_PYTHONS names, or, when it is unset, python3.11' \
+    'to python3.14 on PATH. A missing one stops the release before the first check.' \
+    'Exit 0 ready; 1 not ready or a gate failed; 2 usage.'
+}
+
+stop() {
+  printf 'release: not ready: %s\n' "$1" >&2
+  exit 1
+}
+
+gate() {
+  local code=0
+  "$@" || code=$?
+  printf 'release: %s exit %s\n' "$*" "$code"
+  [[ "$code" == 0 ]] || stop "$* failed; fix it, commit, and rerun."
+}
+
+case "$#:${1:-}" in
+  0:) ;;
+  1:-h | 1:--help)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'error: scripts/release takes no arguments\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+cd "$project_dir"
+version="$(sed -n 's/^__version__ = "\([^"]*\)"$/\1/p' src/first_commit/__init__.py)"
+repository="$(sed -n 's/^GITHUB_REPOSITORY = "\([^"]*\)"$/\1/p' src/first_commit/hooks.py)"
+[[ -n "$version" ]] || stop 'src/first_commit/__init__.py names no __version__.'
+[[ -n "$repository" ]] || stop 'src/first_commit/hooks.py names no GITHUB_REPOSITORY.'
+tag="v$version"
+
+changes="$(git status --porcelain)" || stop 'git status failed; run it and fix what it reports.'
+[[ -z "$changes" ]] ||
+  stop 'the working tree has uncommitted or untracked files; commit or remove them.'
+branch="$(git symbolic-ref --quiet --short HEAD)" ||
+  stop 'HEAD is detached; check out the branch that holds the release commit.'
+commit="$(git rev-parse HEAD)"
+tagged="$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}" || true)"
+if [[ -n "$tagged" && "$tagged" != "$commit" ]]; then
+  stop "tag $tag already names $tagged, not HEAD; raise the version in a new commit."
+fi
+grep -qF ".git@$tag'" README.md ||
+  stop "README.md does not install $tag; set its install lines to $tag."
+
+# The same lookup as find_python in scripts/check, which runs the matrix.
+missing=''
+for python_version in $matrix_versions; do
+  if [[ -z "${FIRST_COMMIT_PYTHONS:-}" ]]; then
+    command -v "python$python_version" >/dev/null || missing+="python$python_version "
+    continue
+  fi
+  builds=("$FIRST_COMMIT_PYTHONS"/cpython-"$python_version".*/bin/python"$python_version")
+  [[ -x "${builds[0]}" ]] || missing+="$python_version "
+done
+if [[ -n "$missing" && -n "${FIRST_COMMIT_PYTHONS:-}" ]]; then
+  stop "FIRST_COMMIT_PYTHONS ($FIRST_COMMIT_PYTHONS) holds no build of Python \
+${missing% }; add a cpython-<version>.* build of each, or unset it to use python3.11 \
+to python3.14 on PATH."
+fi
+[[ -z "$missing" ]] || stop "not on PATH: ${missing% }; install each CI Python, or set \
+FIRST_COMMIT_PYTHONS to a folder of cpython-<version>.* builds."
+printf 'release: %s at %s on branch %s\n' "$tag" "$commit" "$branch"
+
+gate scripts/check full
+gate scripts/check matrix
+gate scripts/verify full
+gate scripts/verify control
+
+printf '\nReady to release %s at commit %s. Run:\n\n' "$tag" "$commit"
+if [[ -z "$tagged" ]]; then
+  printf "  git tag -s %s -m 'first-commit %s' %s\n" "$tag" "$version" "$commit"
+fi
+printf '  git push origin %s\n  git push origin %s\n' "$branch" "$tag"
+if [[ "$branch" != main ]]; then
+  printf '\nThe branch is %s: merge it into main too, so GitHub main holds the release.\n' \
+    "$branch"
+fi
+cat <<EOF
+
+Then prove the published release:
+
+  scripts/verify full --require-github
+  tool="\$(mktemp -d)/first-commit"
+  python3 -m venv "\$tool"
+  "\$tool/bin/python" -m pip install 'first-commit[setup] @ git+https://github.com/$repository.git@$tag'
+  "\$tool/bin/first-commit" version  # prints $version
+EOF

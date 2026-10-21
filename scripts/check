@@ -1,0 +1,189 @@
+#!/bin/bash
+set -euo pipefail
+
+# Git exports GIT_DIR and other variables that choose the repository to its hooks,
+# and the pre-push hook runs this script; its tests and scratch repositories must
+# not use that repository.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX GIT_NAMESPACE \
+  GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_QUARANTINE_PATH \
+  GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+for name in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+  unset "$name"
+done
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+mode="${1:-full}"
+matrix_versions='3.11 3.12 3.13 3.14'
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+  export PATH="$project_dir/.venv/bin:$PATH"
+fi
+export PATH="$project_dir/.local/bin:$PATH"
+
+usage() {
+  printf '%s\n' \
+    'Usage: scripts/check [fast|full|matrix]' \
+    '' \
+    'The offline repository gate: lint, format, shellcheck, mypy, duplicate and' \
+    'file-length checks, unit tests, coverage, compilation, and first-commit check' \
+    'on this repository (skipped in a pre-commit hook run, where the' \
+    'first-commit-push hook runs it). It runs no end-to-end journeys;' \
+    'scripts/verify does. Run it before every commit. Default: full.' \
+    '' \
+    'fast  scripts/lint, mypy, pylint, unit tests, coverage, compilation, first-commit check.' \
+    'full  Also hook metadata and package build checks.' \
+    "matrix  Runs full once per CI Python version ($matrix_versions), each in a new" \
+    '        temporary virtual environment with the test extra (needs PyPI), using' \
+    '        python3.11 to python3.14 on PATH, or, when FIRST_COMMIT_PYTHONS is set,' \
+    '        the cpython-<version>.* builds in that folder (as uv installs them). Before' \
+    '        that, it installs the pinned setup extra alone (pip --no-deps) in another' \
+    '        new environment and runs pip check, so an unpinned dependency fails. Prints' \
+    '        each exit code and writes them to .local/check-matrix/<UTC time>/summary.md;' \
+    '        exits 1 if any run failed or a version is missing.'
+}
+
+# The setup extra holds the same pins as the clone setup hook in
+# .pre-commit-hooks.yaml.
+pins_reader='import sys, tomllib
+with open(sys.argv[1], "rb") as file:
+    print("\n".join(tomllib.load(file)["project"]["optional-dependencies"]["setup"]))'
+
+# pre-commit installs the hook pins with their dependencies, so a missing pin
+# would install unpinned. Installing them alone, then pip check, finds the gap.
+check_hook_pins() {
+  local python="$1" venv="$2"
+  "$python" -m venv "$venv" &&
+    "$venv/bin/python" -c "$pins_reader" "$project_dir/pyproject.toml" >"$venv.pins" &&
+    "$venv/bin/python" -m pip install -q --disable-pip-version-check --no-deps \
+      -r "$venv.pins" &&
+    "$venv/bin/python" -m pip check
+}
+
+write_matrix_summary() {
+  local status="$1" evidence changes platform
+  local head='unknown (not a Git work tree)' dirty=unknown
+  shift
+  evidence="$project_dir/.local/check-matrix/$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$evidence"
+  platform="$(uname -srm)"
+  if changes="$(git -C "$project_dir" status --porcelain 2>/dev/null)"; then
+    head="$(git -C "$project_dir" rev-parse HEAD 2>/dev/null)" || head='unknown (no commit)'
+    dirty=no
+    [[ -z "$changes" ]] || dirty=yes
+  fi
+  {
+    printf '%s\n' '# scripts/check matrix' ''
+    printf -- '- HEAD: %s (dirty: %s)\n' "$head" "$dirty"
+    printf -- '- platform: %s\n' "$platform"
+    printf -- '- exit: %s\n' "$status"
+    printf -- '- %s\n' "$@"
+  } >"$evidence/summary.md"
+  printf 'evidence: %s/\n' "${evidence#"$project_dir"/}"
+}
+
+find_python() {
+  local version="$1" pythons="${FIRST_COMMIT_PYTHONS:-}"
+  local -a found
+  if [[ -z "$pythons" ]]; then
+    command -v "python$version" ||
+      printf 'missing (no python%s on PATH; install it, or set %s)\n' "$version" \
+        'FIRST_COMMIT_PYTHONS to a folder of cpython-<version>.* builds'
+    return
+  fi
+  found=("$pythons"/cpython-"$version".*/bin/python"$version")
+  if [[ -x "${found[0]}" ]]; then
+    printf '%s\n' "${found[0]}"
+  else
+    printf 'missing (no %s/cpython-%s.*)\n' "$pythons" "$version"
+  fi
+}
+
+run_matrix() {
+  local status=0 version python found_version code
+  local -a results=()
+  # Global, so the exit trap can still read it after this function returns.
+  matrix_scratch="$(mktemp -d)"
+  trap 'rm -rf "$matrix_scratch"' EXIT
+  local scratch="$matrix_scratch"
+  for version in $matrix_versions; do
+    python="$(find_python "$version")"
+    if [[ "$python" == missing* ]]; then
+      results+=("matrix: Python $version: $python")
+      status=1
+      continue
+    fi
+    found_version="$("$python" -c 'import platform; print(platform.python_version())')"
+    printf 'matrix: Python %s: %s (%s)\n' "$version" "$python" "$found_version"
+    results+=("matrix: Python $version: $python ($found_version)")
+    code=0
+    check_hook_pins "$python" "$scratch/$version-hook-pins" || code=$?
+    results+=("matrix: Python $version: pinned hook dependencies (pip check): exit $code")
+    if [[ "$code" != 0 ]]; then
+      status=1
+    fi
+    code=0
+    "$python" -m venv "$scratch/$version" &&
+      "$scratch/$version/bin/python" -m pip install -q --disable-pip-version-check \
+        "${project_dir}[test]" &&
+      VIRTUAL_ENV="$scratch/$version" PATH="$scratch/$version/bin:$PATH" \
+        "$project_dir/scripts/check" full || code=$?
+    results+=("matrix: Python $version: scripts/check full: exit $code")
+    if [[ "$code" != 0 ]]; then
+      status=1
+    fi
+  done
+  printf '%s\n' "${results[@]}"
+  write_matrix_summary "$status" "${results[@]}"
+  printf 'matrix: exit %s\n' "$status"
+  return "$status"
+}
+
+case "$mode" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  fast | full)
+    ;;
+  matrix)
+    run_matrix
+    exit $?
+    ;;
+  *)
+    printf 'error: unknown check mode\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+cd "$project_dir"
+export PYTHONPATH="$project_dir/src"
+export PYTHONPYCACHEPREFIX="$project_dir/.local/pycache"
+export PRE_COMMIT_HOME="$project_dir/.local/pre-commit"
+
+scripts/lint
+scripts/lint types
+
+if [[ "$mode" == 'full' ]]; then
+  python3 -m pre_commit validate-config
+  python3 -m pre_commit validate-manifest
+fi
+mkdir -p .local/coverage
+export COVERAGE_FILE="$project_dir/.local/coverage/data"
+python3 -m coverage erase
+python3 -m coverage run -m unittest discover -s tests -q
+python3 -m coverage json -q -o .local/coverage/coverage.json
+python3 scripts/check-coverage .local/coverage/coverage.json
+python3 -m coverage report
+python3 -m compileall -q src tests
+# pre-commit sets PRE_COMMIT=1 for its hooks. On push, the first-commit-push hook
+# already runs these checks, so the pre-push gate does not run them twice.
+if [[ "${PRE_COMMIT:-}" != 1 ]]; then
+  bin/first-commit check
+else
+  printf '%s\n' 'first-commit check skipped (PRE_COMMIT=1); the first-commit-push hook runs it'
+fi
+if [[ "$mode" == 'full' ]]; then
+  python3 -m build --wheel --no-isolation
+  scripts/check-package
+fi

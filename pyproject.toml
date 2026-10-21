@@ -1,0 +1,161 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "first-commit"
+version = "0.4.0"
+description = "One-shot repository starter with local Git hygiene checks"
+authors = [{ name = "Amrendra Kumar" }]
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["git", "pre-commit", "privacy", "repository-policy", "security"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/amrendra18/first-commit"
+Repository = "https://github.com/amrendra18/first-commit"
+Issues = "https://github.com/amrendra18/first-commit/issues"
+Releases = "https://github.com/amrendra18/first-commit/releases"
+
+[project.optional-dependencies]
+# Setup's whole dependency tree is pinned to exact versions at least 21 days old.
+# Package metadata cannot hold hashes, and pip's hash-checking mode refuses the
+# git+ install that the README uses, so the pins carry no hashes.
+setup = [
+  "pre-commit==3.8.0",
+  "PyYAML==6.0.3",
+  "cfgv==3.5.0",
+  "distlib==0.4.3",
+  "filelock==4.0.4",
+  "identify==2.6.20",
+  "nodeenv==1.11.0",
+  "platformdirs==4.12.0",
+  "python-discovery==1.6.1",
+  "virtualenv==21.13.0",
+]
+test = [
+  "build==1.4.4",
+  "coverage==7.10.7",
+  "pre-commit==3.8.0",
+  "PyYAML==6.0.3",
+  "cfgv==3.5.0",
+  "distlib==0.4.3",
+  "filelock==4.0.4",
+  "identify==2.6.20",
+  "nodeenv==1.11.0",
+  "platformdirs==4.12.0",
+  "python-discovery==1.6.1",
+  "virtualenv==21.13.0",
+  "mypy==2.3.1",
+  "pylint==4.0.9",
+  "ruff==0.16.7",
+  "shellcheck-py==0.11.0.1",
+  "types-PyYAML==6.0.12.20250915",
+  "setuptools==84.0.0",
+]
+
+[project.scripts]
+first-commit = "first_commit.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+first_commit = ["data/*.txt"]
+
+[tool.coverage.run]
+branch = true
+source = ["first_commit"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+# Preview also turns on the preview behavior of stable rules; preview-only rules
+# run only when named by full code below.
+preview = true
+explicit-preview-rules = true
+select = [
+  "A", "ANN401", "ARG", "ASYNC", "B", "BLE", "C4", "C90", "DTZ", "E", "ERA", "EXE",
+  "F", "FBT", "FLY", "FURB", "G", "I", "INP", "ISC003", "ISC004", "LOG", "N", "PERF",
+  "PGH", "PIE", "PL", "PTH", "PYI", "RET", "RSE", "RUF", "S", "SIM", "SLF001", "SLOT",
+  "T10", "TID", "TRY300", "TRY301", "UP", "W", "YTT",
+  "B909", "PLR0914", "PLR0916", "PLW0717", "RUF031",
+]
+ignore = [
+  # Setup modules and PyYAML load only when a command needs them, so `check` runs
+  # without them; the harness imports the snapshot's source only after it is on sys.path.
+  "PLC0415",
+  # Every subprocess call passes an argument list without a shell; S603 flags each call
+  # whatever its input, and S602 still reports shell=True.
+  "S603",
+  # Tests and the harness start git and other tools from PATH on purpose; product
+  # code resolves each executable first and has no site.
+  "S607",
+  # Tests nest a patch and the assertion that needs it, so each scope stays visible.
+  "SIM117",
+]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-bool-expr = 7
+max-statements = 40
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "scripts"
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+# Tests may leave fixture helpers and mock side effects unannotated; their bodies are
+# still checked (check_untyped_defs, part of strict).
+[[tool.mypy.overrides]]
+module = ["tests", "tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+[tool.pylint.main]
+disable = ["all"]
+enable = [
+  "cyclic-import",
+  "duplicate-code",
+  "redefined-outer-name",
+  "too-many-lines",
+]
+
+[tool.pylint.format]
+max-module-lines = 500
+
+[tool.pylint.similarities]
+min-similarity-lines = 6

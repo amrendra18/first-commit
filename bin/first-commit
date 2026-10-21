@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+python_command=python3
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+  python_command="$VIRTUAL_ENV/bin/python"
+elif [[ -x "$project_dir/.venv/bin/python" ]]; then
+  python_command="$project_dir/.venv/bin/python"
+fi
+# The probe avoids f-strings, so an old python3 still reaches the version check.
+probe='import sys; print("%d.%d.%d" % sys.version_info[:3]); sys.exit(sys.version_info < (3, 11))'
+if ! running="$("$python_command" -c "$probe" 2>/dev/null)"; then
+  printf '%s\n' \
+    "error: bin/first-commit needs Python 3.11 or newer; this is Python ${running:-unknown} ($python_command)." \
+    "why: it runs \$VIRTUAL_ENV/bin/python, else .venv/bin/python, else python3 from PATH." \
+    "fix: create the project environment with \`python3.13 -m venv .venv\` and \`.venv/bin/python -m pip install -e '.[test]'\`, or activate a virtual environment with Python 3.11 or newer." \
+    >&2
+  exit 3
+fi
+export PYTHONPATH="$project_dir/src"
+export PATH="$project_dir/.local/bin:$PATH"
+exec "$python_command" -m first_commit.cli "$@"

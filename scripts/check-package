@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+# Git exports GIT_DIR and other variables that choose the repository to its hooks,
+# and scripts/check runs this script in the pre-push hook; its tests must not use
+# that repository.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX GIT_NAMESPACE \
+  GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_QUARANTINE_PATH \
+  GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+for name in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+  unset "$name"
+done
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$project_dir"
+
+version="$(PYTHONPATH=src python3 -c 'from first_commit import __version__; print(__version__)')"
+wheel="dist/first_commit-${version}-py3-none-any.whl"
+test -f "$wheel"
+
+smoke_dir="$(mktemp -d)"
+trap 'rm -rf "$smoke_dir"' EXIT
+python3 -m venv "$smoke_dir/venv"
+unset PYTHONPATH
+export PIP_NO_CACHE_DIR=1
+"$smoke_dir/venv/bin/python" -m pip install \
+  --disable-pip-version-check \
+  --no-deps \
+  --no-index \
+  "$project_dir/$wheel" >/dev/null
+"$smoke_dir/venv/bin/python" -m first_commit.cli version >/dev/null
+"$smoke_dir/venv/bin/first-commit" version >/dev/null
+"$smoke_dir/venv/bin/first-commit" setup --help >/dev/null
+"$smoke_dir/venv/bin/python" -c 'from importlib.resources import files; assert files("first_commit").joinpath("data/commit-message.txt").read_bytes()'
+mkdir "$smoke_dir/blank"
+"$smoke_dir/venv/bin/first-commit" setup --dry-run --license apache-2.0 \
+  --revision 1111111111111111111111111111111111111111 \
+  --root "$smoke_dir/blank" | grep -Fq 'LICENSE'
+test ! -e "$smoke_dir/blank/.git"
+test ! -e "$smoke_dir/blank/LICENSE"
+
+printf 'ok - package contents passed\n'

@@ -1,0 +1,18 @@
+<type>(<scope>)!: <subject>
+
+# Types: feat, fix, docs, style, refactor, test, build, chore, perf, ci, deps,
+# revert, security, infra, release.
+# Scope and ! are optional. Use an imperative subject; prefer at most 72 characters.
+# Complete every section. Use "Not run: <reason>" when tests were not run.
+
+Why:
+- <reason>
+
+Changes:
+- <changes>
+
+Test Plan:
+- <commands and results>
+
+Risks:
+- <risks>

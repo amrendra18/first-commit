@@ -1,0 +1,51 @@
+---
+minimum_pre_commit_version: "3.2.0"
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+repos:
+  - repo: local
+    hooks:
+      - id: first-commit-staged
+        name: first-commit staged hygiene
+        entry: bin/first-commit hook pre-commit
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: project-lint
+        name: Project lint, format, and shell checks
+        entry: scripts/lint
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: first-commit-message
+        name: first-commit commit-message hygiene
+        entry: bin/first-commit hook commit-msg
+        language: system
+        always_run: true
+        pass_filenames: true
+        stages: [commit-msg]
+        verbose: true
+      # This hook runs the push checks. scripts/check full below skips its own
+      # first-commit check in a pre-commit hook run (PRE_COMMIT=1).
+      - id: first-commit-push
+        name: first-commit pre-push hygiene
+        entry: bin/first-commit hook pre-push
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+      - id: project-quality
+        name: Project tests, coverage, and package checks on the pushed commit
+        entry: scripts/check-pushed scripts/check full
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+      - id: project-journeys
+        name: first-commit journeys (scripts/verify fast) on the pushed commit
+        entry: scripts/check-pushed scripts/verify fast
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]

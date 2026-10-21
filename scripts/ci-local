@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+from verify_lib.interpreter import require_supported
+from verify_lib.repository_variables import remove_repository_variables
+
+if __name__ == "__main__":
+    # Git exports GIT_DIR and other variables that choose the repository to its
+    # hooks; when a hook runs this script, its clone and steps must not use that
+    # repository.
+    remove_repository_variables(os.environ)
+    require_supported(Path(__file__), sys.argv[1:])
+    # Imported only now: the harness code needs Python 3.11 or newer.
+    from verify_lib.rehearsal import main
+
+    raise SystemExit(main(sys.argv[1:]))

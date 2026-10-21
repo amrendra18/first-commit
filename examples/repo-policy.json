@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "public_emails": ["maintainers@example.org"],
+  "commit_body_sections": true,
+  "public_environment_files": [
+    {
+      "path": "tests/fixtures/.env",
+      "reason": "Synthetic parser fixture with no credentials."
+    }
+  ],
+  "forbidden_paths": [
+    {
+      "match": "prefix",
+      "value": "exports/",
+      "reason": "Generated data exports are private."
+    },
+    {
+      "match": "suffix",
+      "value": ".kdbx",
+      "reason": "Password vaults must not enter Git."
+    }
+  ],
+  "privacy_detector_exceptions": [
+    {
+      "path": "tests/fixtures/export.json",
+      "line": 230,
+      "rule": "privacy.private-key",
+      "sha256": "b82cdb5b9acf5b6e232f1325ccd9bbd32b696e44a7ea73abf9a9822f0b38230b",
+      "reason": "Synthetic parser fixture reviewed for publication."
+    }
+  ]
+}

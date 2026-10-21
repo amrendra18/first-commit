@@ -1,0 +1,90 @@
+#!/bin/bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+usage() {
+  printf '%s\n' \
+    'Usage: scripts/check-pushed SCRIPT [ARGUMENT...]' \
+    '' \
+    'Runs SCRIPT, a path from the repository root such as scripts/check, on exactly' \
+    'the commit being pushed, PRE_COMMIT_TO_REF (pre-commit sets it). The pre-push' \
+    'hooks use it for scripts/check full and scripts/verify fast. When that commit' \
+    'is HEAD and the checkout has no changes, no untracked files, and no file marked' \
+    'assume-unchanged or skip-worktree, SCRIPT runs in place. Otherwise it runs' \
+    "from a temporary detached worktree of that commit, with this checkout's" \
+    'virtual environment, harness Python, Gitleaks (.local/bin), and verify cache.' \
+    'Its evidence lands in .local/verify of this checkout. The worktree is removed' \
+    'on every exit. Without PRE_COMMIT_TO_REF, SCRIPT runs in place.'
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  '')
+    printf 'error: scripts/check-pushed needs the script to run\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+script="$1"
+shift
+
+pushed="${PRE_COMMIT_TO_REF:-}"
+if [[ -n "$pushed" && ! "$pushed" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+  printf 'error: PRE_COMMIT_TO_REF is not a full commit id\n' >&2
+  exit 2
+fi
+if [[ "$pushed" =~ ^0+$ ]]; then
+  printf 'error: PRE_COMMIT_TO_REF is all zeros, the id Git gives a deleted ref, so no commit is pushed\n' >&2
+  exit 2
+fi
+if [[ -z "$pushed" ]]; then
+  exec "$project_dir/$script" "$@"
+fi
+head="$(git -C "$project_dir" rev-parse HEAD)"
+changes="$(git -C "$project_dir" status --porcelain --untracked-files=all)"
+# git status does not show an edit to a file marked assume-unchanged (a lowercase
+# tag) or skip-worktree (S).
+hidden="$(git -C "$project_dir" ls-files -v | { grep '^[[:lower:]S]' || true; })"
+if [[ "$pushed" == "$head" && -z "$changes" && -z "$hidden" ]]; then
+  exec "$project_dir/$script" "$@"
+fi
+
+# Git exports these to hooks; left set, they would point the worktree's checkout
+# and the script's Git commands at this checkout.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+scratch="$(mktemp -d)"
+tree="$scratch/tree"
+remove_tree() {
+  git -C "$project_dir" worktree remove --force "$tree" >/dev/null 2>&1 || true
+  rm -rf "$scratch"
+}
+trap remove_tree EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+printf 'check-pushed: running %s on %s in a temporary worktree\n' "$script" "$pushed"
+git -C "$project_dir" worktree add --quiet --detach "$tree" "$pushed"
+if [[ -e "$tree/.local" || -L "$tree/.local" ]]; then
+  printf 'error: the pushed commit tracks .local, which must stay untracked\n' >&2
+  exit 1
+fi
+# The worktree's .local is ignored, so these links never reach a snapshot.
+mkdir "$tree/.local"
+for shared in bin verify verify-cache; do
+  mkdir -p "$project_dir/.local/$shared"
+  ln -s "$project_dir/.local/$shared" "$tree/.local/$shared"
+done
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+  export VIRTUAL_ENV="$project_dir/.venv"
+  export PATH="$VIRTUAL_ENV/bin:$PATH"
+fi
+export FIRST_COMMIT_VERIFY_PYTHON="${FIRST_COMMIT_VERIFY_PYTHON:-$project_dir/.venv/bin/python}"
+# The first-commit-push hook already ran first-commit check on this push.
+export PRE_COMMIT=1
+cd "$tree"
+"$tree/$script" "$@"

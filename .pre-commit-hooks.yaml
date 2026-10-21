@@ -1,0 +1,72 @@
+---
+- id: first-commit-staged
+  name: first-commit staged hygiene
+  description: Validates exact staged bytes against repository publication policy.
+  entry: first-commit hook pre-commit
+  language: python
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: false
+  stages: [pre-commit]
+- id: first-commit-message
+  name: first-commit commit-message hygiene
+  description: Validates message privacy and secrets, local Git settings, and commit formatting.
+  entry: first-commit hook commit-msg
+  language: python
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: true
+  stages: [commit-msg]
+  verbose: true
+- id: first-commit-push
+  name: first-commit pre-push hygiene
+  description: Checks readiness, the working tree, staged files, and the commits a push sends.
+  entry: first-commit hook pre-push
+  language: python
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: false
+  stages: [pre-push]
+- id: first-commit-setup
+  name: first-commit clone setup
+  description: Sets up this clone's identity, signing, scanner, and hooks once.
+  entry: first-commit hook setup
+  language: python
+  additional_dependencies:
+    - pre-commit==3.8.0
+    - PyYAML==6.0.3
+    - cfgv==3.5.0
+    - distlib==0.4.3
+    - filelock==4.0.4
+    - identify==2.6.20
+    - nodeenv==1.11.0
+    - platformdirs==4.12.0
+    - python-discovery==1.6.1
+    - virtualenv==21.13.0
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: false
+  stages: [manual]
+  verbose: true
+- id: first-commit-doctor
+  name: first-commit doctor
+  description: Reports this clone's identity, signing, scanner, and hook readiness.
+  entry: first-commit doctor
+  language: python
+  additional_dependencies: ["PyYAML==6.0.3"]
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: false
+  stages: [manual]
+  verbose: true
+- id: first-commit-check
+  name: first-commit check
+  description: Runs doctor and the working, staged, and history checks in this clone.
+  entry: first-commit check
+  language: python
+  additional_dependencies: ["PyYAML==6.0.3"]
+  minimum_pre_commit_version: "3.2.0"
+  always_run: true
+  pass_filenames: false
+  stages: [manual]
+  verbose: true
