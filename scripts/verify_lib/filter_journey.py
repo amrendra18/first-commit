@@ -1,9 +1,15 @@
+import re
 from pathlib import Path
 
 from verify_lib.core import Run, blocked, git_commit, require
 
 FILTERED_FILE = "data.dat"
 FILTER_CONFIG = "filter.lfs.clean"
+LFS_POINTER = re.compile(
+    r"version https://git-lfs\.github\.com/spec/v1\n"
+    r"oid sha256:[0-9a-f]{64}\n"
+    r"size [0-9]+\n"
+)
 
 
 def filtered_value(run: Run, project: Path, canary: str) -> list[str]:
@@ -26,7 +32,8 @@ def filtered_value(run: Run, project: Path, canary: str) -> list[str]:
     printed = output.count(canary)
     return [
         require(
-            condition=staged.strip() == "pointer",
+            condition=staged == "pointer\n"
+            or LFS_POINTER.fullmatch(staged) is not None,
             observed="the clean filter stored only a pointer in the index",
         ),
         blocked(code, "a commit of a filtered file whose working copy holds the value"),

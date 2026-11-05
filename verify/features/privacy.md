@@ -28,7 +28,9 @@ file that contains it, or a file named with it. Or the person commits it with
    file that contains the canary with `git commit --no-verify`, delete the file in a
    second `--no-verify` commit, and push `main` again. Then set a local clean filter, as
    Git LFS installs one (`filter.lfs.clean = sed s/.*/pointer/` for `*.dat` in
-   `.git/info/attributes`), and commit `data.dat` holding the canary.
+   `.git/info/attributes`), and commit `data.dat` holding the canary. On a machine with
+   Git LFS installed, its `filter.lfs.process` wins over this filter, and the index holds a
+   real Git LFS pointer.
 5. Restore the project list. Put the canary only in the user-level list under the
    harness's scratch HOME, as a link to a mode 644 file in the run's work folder.
    Commit a file that contains it.
@@ -44,7 +46,7 @@ commit exits non-zero, reports `privacy.private-path` at the path
 `<private value>-notes.txt`, and the output never contains the canary. The second push
 of step 4 exits non-zero, reports `privacy.private-literal` at `"notes.txt":1` with the
 short id of the commit that added the file, and the output never contains the canary.
-The filtered `data.dat` of step 4 has only `pointer` in the index, yet its commit exits
+The filtered `data.dat` of step 4 has only a pointer in the index, yet its commit exits
 non-zero with `privacy.private-literal` at `data.dat`, and the output never contains the
 canary.
 The step 5 commit exits non-zero, reports `privacy.private-literal`, and the output
