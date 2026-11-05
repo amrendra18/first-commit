@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import subprocess
 import sys
@@ -92,6 +93,34 @@ class CloneSetupIdentityTest(PatchedSetupFixture):
             ),
             output,
         )
+
+    def test_clone_setup_in_json_prints_one_object_and_progress_on_stderr(
+        self,
+    ) -> None:
+        def setup(_root, _request, **options):
+            options["progress"]("Installing hook environment...")
+            return ("Verification: passed",)
+
+        self.setup.side_effect = setup
+        identity = (
+            "Identity: Example Contributor <public@example.net>, signing key "
+            "key.pub (from FIRST_COMMIT_AUTHOR_NAME, FIRST_COMMIT_AUTHOR_EMAIL, "
+            "and FIRST_COMMIT_SIGNING_KEY)"
+        )
+        with patch.dict(os.environ, VARIABLES):
+            code, output, error = self.run_cli("hook", "setup", "--format", "json")
+        self.assertEqual(0, code)
+        value = json.loads(output)
+        self.assertEqual((True, False), (value["passed"], value["dry_run"]))
+        self.assertEqual(
+            [
+                identity,
+                "Verification: passed",
+                f"Machine identity: saved to {self.identity}",
+            ],
+            value["actions"],
+        )
+        self.assertEqual(f"{identity}\nInstalling hook environment...\n", error)
 
     def test_variables_that_differ_from_the_checkout_record_stop_setup(self) -> None:
         create_contributor(self.root, OTHER)
@@ -216,13 +245,13 @@ class DoctorSigningFileTest(unittest.TestCase):
 
 
 class UnsupportedSystemTest(unittest.TestCase):
-    def test_every_command_stops_with_exit_3_and_a_fix_line(self) -> None:
+    def test_every_command_stops_with_exit_1_and_a_fix_line(self) -> None:
         for arguments in (("version",), ("check",), ("setup", "--dry-run")):
             with self.subTest(arguments=arguments):
                 error = io.StringIO()
                 with patch.object(sys, "platform", "win32"), redirect_stderr(error):
                     code = cli.main(arguments)
-                self.assertEqual(3, code)
+                self.assertEqual(1, code)
                 self.assertIn("macOS and Linux only", error.getvalue())
                 self.assertIn("\nfix: ", error.getvalue())
 
@@ -238,7 +267,7 @@ class UnsupportedSystemTest(unittest.TestCase):
             text=True,
             check=False,
         )
-        self.assertEqual(3, result.returncode, result.stderr)
+        self.assertEqual(1, result.returncode, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("macOS and Linux only; this system reports win32", result.stderr)
         self.assertIn("\nfix: ", result.stderr)
@@ -246,7 +275,7 @@ class UnsupportedSystemTest(unittest.TestCase):
     def test_readme_states_the_supported_systems(self) -> None:
         readme = " ".join((PROJECT / "README.md").read_text("utf-8").split())
         self.assertIn("macOS or Linux", readme)
-        self.assertIn("exit 3", readme)
+        self.assertIn("exit 1", readme)
 
 
 if __name__ == "__main__":

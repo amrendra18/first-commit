@@ -10,7 +10,7 @@ which asks for the identity and for confirmation, then `first-commit doctor`.
 ## How to get to it
 
 Install the tool as the README Install section says, then in an empty folder run
-`"$FIRST_COMMIT" setup --dry-run`, `"$FIRST_COMMIT" setup`, and `"$FIRST_COMMIT" doctor`.
+`first-commit setup --dry-run`, `first-commit setup`, and `first-commit doctor`.
 
 ## Driving it
 

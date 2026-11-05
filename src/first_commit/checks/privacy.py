@@ -1,3 +1,5 @@
+import bisect
+import functools
 import hashlib
 import re
 import unicodedata
@@ -43,13 +45,18 @@ PATTERNS: tuple[tuple[str, str, str], ...] = (
         "Detected a literal user-home path.",
     ),
 )
+UNAPPROVED_EMAIL_RULE = "privacy.unapproved-email"
 EXAMPLE_DOMAINS = {"example.com", "example.net", "example.org"}
 RESERVED_TEST_SUFFIXES = (".invalid", ".test")
 # Protocol namespaces, not mail domains. SSH names its algorithms, ciphers, and
 # certificate formats "<name>@openssh.com" or "<name>@libssh.org", which match
 # the address shape without being anyone's address.
 PROTOCOL_DOMAINS = {"openssh.com", "libssh.org"}
-GITHUB_OWNER_PREFIX = re.compile(r"(?:https?://|ssh://git@|git@)github\.com[/:]$")
+GITHUB_OWNER_PREFIX = re.compile(r"(?:https?://|ssh://git@|git@)github\.com[/:]\Z")
+MAX_OWNER = 39
+OWNER = re.compile(r"[a-z0-9-]{1,39}")
+OWNER_END = re.compile(r"[a-z0-9-]+\Z")
+OWNER_START = re.compile(r"[a-z0-9-]+")
 GITHUB_SSH_USER = "git" + "@" + "github.com"
 UTF16_MARKS = (b"\xff\xfe", b"\xfe\xff")
 # Every private key of one type starts with the same line, so its exceptions hash
@@ -58,6 +65,8 @@ FILE_DIGEST_RULES = frozenset({"privacy.private-key"})
 # Each call yields the line bytes again, one at a time: a list of a 10 MiB file's
 # lines took up to 300 MiB.
 RawLines = Callable[[], Iterator[bytes]]
+
+NEWLINE = re.compile("\n")
 
 
 @dataclass(frozen=True)
@@ -111,8 +120,13 @@ def forbidden_path_policy(
     return None
 
 
+@functools.lru_cache(maxsize=4)
+def _newlines(text: str) -> tuple[int, ...]:
+    return tuple(match.start() for match in NEWLINE.finditer(text))
+
+
 def _line(text: str, start: int) -> int:
-    return text.count("\n", 0, start) + 1
+    return bisect.bisect_left(_newlines(text), start) + 1
 
 
 def _reserved_example_address(address: str) -> bool:
@@ -146,10 +160,17 @@ def _approved_lines(
 
 def _github_owner(normalized: str, start: int, value: str) -> bool:
     end = start + len(value)
-    if normalized[end : end + 1] != "/":
+    before = OWNER_END.search(normalized, max(0, start - MAX_OWNER), start)
+    after = OWNER_START.match(normalized, end, end + MAX_OWNER)
+    first = before.start() if before else start
+    last = after.end() if after else end
+    if (
+        OWNER.fullmatch(normalized, first, last) is None
+        or normalized[last : last + 1] != "/"
+    ):
         return False
     return (
-        GITHUB_OWNER_PREFIX.search(normalized[max(0, start - 32) : start]) is not None
+        GITHUB_OWNER_PREFIX.search(normalized[max(0, first - 32) : first]) is not None
     )
 
 
@@ -194,7 +215,7 @@ def _email_findings(
         if line in exempt_lines:
             continue
         yield Finding(
-            rule_id="privacy.unapproved-email",
+            rule_id=UNAPPROVED_EMAIL_RULE,
             path=path,
             line=line,
             summary="Detected an unapproved email address.",

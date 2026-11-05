@@ -350,10 +350,11 @@ class ImmutableVendorTest(unittest.TestCase):
                 object_id = b"a" * 40
                 entry = mode + b" " + object_id + b" 0\tvendor/file\0"
                 with (
+                    patch("first_commit.candidates.run_git", return_value=entry) as git,
                     patch(
-                        "first_commit.candidates.run_git",
-                        side_effect=(entry, object_id + b" blob 3\n"),
-                    ) as git,
+                        "first_commit.git.run_git",
+                        return_value=object_id + b" blob 3\n",
+                    ) as check,
                     patch(
                         "first_commit.candidates.cat_file_blobs",
                         return_value=iter(((object_id.decode(), b"abc"),)),
@@ -362,5 +363,5 @@ class ImmutableVendorTest(unittest.TestCase):
                     candidate = index_candidate(self.root, "vendor/file", 10)
                 self.assertEqual(b"abc", candidate.content)
                 self.assertEqual(regular, candidate.regular_file)
-                self.assertEqual(2, git.call_count)
+                self.assertEqual((1, 1), (git.call_count, check.call_count))
                 blobs.assert_called_once_with(self.root, {object_id.decode(): 3})

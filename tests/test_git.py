@@ -54,6 +54,17 @@ class GitTest(unittest.TestCase):
             with self.assertRaisesRegex(GitError, "invalid configuration"):
                 effective_git_settings(Path(), ("commit.template",))
 
+    def test_both_config_readers_match_a_camel_case_key(self) -> None:
+        keys = ("user.useConfigOnly", "gpg.ssh.allowedSignersFile")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize_repository(root)
+            fixture_git(root, "config", "user.useConfigOnly", "true")
+            fixture_git(root, "config", "gpg.ssh.allowedSignersFile", "signers")
+            expected = {keys[0]: "true", keys[1]: "signers"}
+            self.assertEqual(expected, local_git_settings(root, keys))
+            self.assertEqual(expected, effective_git_settings(root, keys))
+
     def test_run_git_wraps_unavailable_executable(self) -> None:
         with patch("first_commit.git.subprocess.run", side_effect=OSError("private")):
             with self.assertRaisesRegex(GitError, "unavailable"):
@@ -173,9 +184,11 @@ class GitTest(unittest.TestCase):
         selected = call.call_args.kwargs["env"]
         self.assertEqual(120, call.call_args.kwargs["timeout"])
         self.assertEqual("/usr/bin", selected["PATH"])
+        pinned = sanitized_git_environment({})
         for key in environment:
             if key != "PATH":
-                self.assertNotIn(key, selected)
+                self.assertEqual(pinned.get(key), selected.get(key))
+        self.assertNotIn("core.hooksPath", selected.values())
 
     def test_git_environment_disables_interactive_credentials(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -346,7 +359,7 @@ class CommitIndexTest(TemporaryRootTest):
         for arguments in (("hook", "pre-commit"), ("hook", "pre-push"), ("check",)):
             with self.subTest(arguments=arguments):
                 code, output = self.run_cli(root, arguments, outside)
-                self.assertEqual(4, code, output)
+                self.assertEqual(1, code, output)
                 self.assertIn(
                     f"The first-commit {' '.join(arguments)} command refused to run",
                     output,

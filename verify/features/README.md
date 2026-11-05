@@ -11,7 +11,12 @@ inherits. A feature that runs `first-commit` puts the tool it tests on `PATH` it
 starts it by its full path, so no other installed copy can answer. `summary.md` lists each
 removed folder once, on the line `PATH folders removed for holding first-commit`. When a
 removed folder also holds `git`, `ssh`, `ssh-add`, `ssh-agent`, or `ssh-keygen`, the harness
-names the folder and exits 3 before any work.
+names the folder and stops before any work, with the exit code `scripts/verify --help`
+lists for an environment that is not ready.
+
+The harness's scratch home sets `init.defaultBranch` to `main`, because the journeys push
+`main`. first-commit itself leaves the branch name to Git's default. When a feature fails,
+the harness prints the output of its last 12 commands, at most 80 lines.
 
 | # | Feature | File | Level | Needs first |
 | --- | --- | --- | --- | --- |

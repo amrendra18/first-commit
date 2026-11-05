@@ -104,13 +104,13 @@ class LocalScannerTrustTest(unittest.TestCase):
         self.assertFalse(self.marker.exists())
         self.assertEqual(self.content, self.scanner.read_bytes())
 
-    def test_check_exits_3_for_an_untrusted_binary(self) -> None:
+    def test_check_exits_1_for_an_untrusted_binary(self) -> None:
         (self.root / ".repo-policy.json").write_text('{"schema_version":1}\n', "utf-8")
         output, error = io.StringIO(), io.StringIO()
         with redirect_stdout(output), redirect_stderr(error):
             code = cli.main(("check", "--root", str(self.root)))
 
-        self.assertEqual(3, code)
+        self.assertEqual(1, code)
         self.assertIn("does not match the pinned", error.getvalue())
         self.assertFalse(self.marker.exists())
 

@@ -1,11 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from first_commit.candidates import environment_files, working_candidates
 from first_commit.checks.environment import DOTENV_PATHSPECS, environment_findings
 from first_commit.models import EnvironmentFile, FileState
-from first_commit.policy_fields import EnvironmentExceptionEntry
+from first_commit.policy import REQUIRED_DOCUMENTS, parse_policy
+from first_commit.policy_fields import DEFAULT_LIMITS, EnvironmentExceptionEntry
+from first_commit.validation import staged, working
 from tests.support import global_excludes, initialize_repository, run_git
 
 
@@ -13,11 +16,6 @@ class EnvironmentTest(unittest.TestCase):
     def test_environment_findings_allow_empty_budget(self) -> None:
         files = (self._file(".env", FileState.VISIBLE),)
         self.assertEqual([], environment_findings(files, (), max_findings=0))
-
-    def test_environment_findings_ignore_repository_ignored_files(self) -> None:
-        files = (self._file("private.env", FileState.IGNORED),)
-
-        self.assertEqual([], environment_findings(files, (), max_findings=1000))
 
     def test_discovers_every_web_dotenv_pattern_at_nested_depths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -53,7 +51,7 @@ class EnvironmentTest(unittest.TestCase):
 
             self.assertEqual((), environment_files(root, (), max_files=10))
 
-    def test_discovers_ignored_file_without_loading_its_content(self) -> None:
+    def test_ignored_file_is_neither_listed_nor_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             initialize_repository(root)
@@ -64,10 +62,36 @@ class EnvironmentTest(unittest.TestCase):
             files = environment_files(root, DOTENV_PATHSPECS, max_files=10)
             candidates = tuple(working_candidates(root, max_files=10, max_bytes=1024))
 
-        self.assertEqual(FileState.IGNORED, files[0].state)
-        self.assertFalse(hasattr(files[0], "content"))
+        self.assertEqual((), files)
         self.assertNotIn(".env", {candidate.path for candidate in candidates})
         self.assertNotIn(secret.decode(), repr(files))
+
+    def test_ignored_files_over_the_count_limit_leave_both_scopes_passing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize_repository(root)
+            (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+            (root / ".repo-policy.json").write_text(
+                '{"schema_version":1}\n', encoding="utf-8"
+            )
+            for path in REQUIRED_DOCUMENTS:
+                (root / path).write_text("# Reviewed\n", encoding="utf-8")
+            run_git(root, "add", "--", ".gitignore", ".repo-policy.json")
+            run_git(root, "add", "--", *REQUIRED_DOCUMENTS)
+            fixtures = root / "node_modules" / "fixtures"
+            fixtures.mkdir(parents=True)
+            for number in range(DEFAULT_LIMITS["max_files"] + 1):
+                (fixtures / f"{number}.env").write_bytes(b"VALUE=example\n")
+            policy = parse_policy(b'{"schema_version":1}', root)
+
+            with patch("first_commit.validation.scan_staged", return_value=()):
+                results = (working(root, policy), staged(root, policy))
+
+        for result in results:
+            with self.subTest(scope=result.scope):
+                self.assertEqual((), result.findings)
 
     def test_rejects_visible_and_tracked_private_environment_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

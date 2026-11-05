@@ -8,6 +8,7 @@ from first_commit.hooks import (
     HOOK_IDS,
     HOOK_TYPES,
     HTTPS_REPOSITORY,
+    LOCAL_REPOSITORY,
     MALFORMED,
     REVISION,
     REVISION_CHARS,
@@ -44,12 +45,30 @@ PROPOSAL_HEADER = (
 )
 
 
+HEADER = (
+    'minimum_pre_commit_version: "3.2.0"\n',
+    "default_install_hook_types:\n",
+    *(f"  - {stage}\n" for stage in HOOK_TYPES),
+    "repos:\n",
+)
+LOCAL_HOOKS = (
+    (HOOK_IDS["pre-commit"], "staged hygiene", "hook pre-commit", "pre-commit", False),
+    (
+        HOOK_IDS["commit-msg"],
+        "commit-message hygiene",
+        "hook commit-msg",
+        "commit-msg",
+        True,
+    ),
+    (HOOK_IDS["pre-push"], "pre-push hygiene", "hook pre-push", "pre-push", False),
+    (DOCTOR_HOOK_ID, "doctor", "doctor", "manual", True),
+    (CHECK_HOOK_ID, "check", "check", "manual", True),
+)
+
+
 def hook_bytes(revision: str, source: str = HTTPS_REPOSITORY) -> bytes:
     lines = [
-        'minimum_pre_commit_version: "3.2.0"\n',
-        "default_install_hook_types:\n",
-        *(f"  - {stage}\n" for stage in HOOK_TYPES),
-        "repos:\n",
+        *HEADER,
         f"  - repo: {json.dumps(source)}\n",
         f"    rev: {json.dumps(revision)}\n",
         "    hooks:\n",
@@ -59,6 +78,22 @@ def hook_bytes(revision: str, source: str = HTTPS_REPOSITORY) -> bytes:
             for name in (SETUP_HOOK_ID, DOCTOR_HOOK_ID, CHECK_HOOK_ID)
         ),
     ]
+    return "".join(lines).encode("utf-8")
+
+
+def local_hook_bytes() -> bytes:
+    lines = [*HEADER, f"  - repo: {LOCAL_REPOSITORY}\n", "    hooks:\n"]
+    for identifier, name, command, stage, verbose in LOCAL_HOOKS:
+        lines += [
+            f"      - id: {identifier}\n",
+            f"        name: first-commit {name}\n",
+            f"        entry: first-commit {command}\n",
+            "        language: system\n",
+            "        always_run: true\n",
+            f"        pass_filenames: {str(stage == 'commit-msg').lower()}\n",
+            f"        stages: [{stage}]\n",
+            *(("        verbose: true\n",) if verbose else ()),
+        ]
     return "".join(lines).encode("utf-8")
 
 
@@ -93,8 +128,9 @@ def _revision_error(declared: object, revision: str | None) -> SetupError:
         return SetupError(
             f"{HOOK_CONFIG} sets the first-commit rev to {shown}, which is not a "
             f"{REVISION_CHARS}-character commit SHA; a tag can move, so setup accepts "
-            "only the commit. Run `pre-commit autoupdate --freeze`, or set rev to the "
-            "tag's commit SHA."
+            "only the commit. Run the `git ls-remote` line of Install in the "
+            "first-commit README with that tag, and set rev to the SHA it prints; "
+            "`pre-commit autoupdate --freeze` would move to the latest release."
         )
     return SetupError(
         f"The first-commit hook revision conflicts: {HOOK_CONFIG} sets rev to "
@@ -112,7 +148,10 @@ def configured_source(root: Path) -> tuple[str, str]:
     if raw is None:
         raise missing
     for repository, hook in hook_entries(load_hook_config(raw)):
-        if repository["repo"] == "local" or hook["id"] not in HOOK_IDS.values():
+        if (
+            repository["repo"] == LOCAL_REPOSITORY
+            or hook["id"] not in HOOK_IDS.values()
+        ):
             continue
         if not approved_source(repository):
             raise _source_error()
@@ -131,7 +170,7 @@ def _check_first_commit_hook(
 ) -> None:
     if not approved_source(repository):
         raise _source_error()
-    if repository["repo"] != "local" and repository.get("rev") != revision:
+    if repository["repo"] != LOCAL_REPOSITORY and repository.get("rev") != revision:
         raise _revision_error(repository.get("rev"), revision)
     if hook["id"] in found or declaration_conflicts(repository, hook):
         raise SetupError("The first-commit hook declaration conflicts.")
@@ -154,12 +193,14 @@ def _check_declared_hooks(entries: list[HookEntry], revision: str | None) -> Non
         raise HooksMissingError(missing)
 
 
-def check_hook_config(raw: bytes, revision: str | None) -> None:
+def check_hook_config(raw: bytes, revision: str | None) -> list[HookEntry]:
     data = load_hook_config(raw)
-    _check_declared_hooks(hook_entries(data), revision)
+    entries = hook_entries(data)
+    _check_declared_hooks(entries, revision)
     # YAML values such as dates have no JSON form.
     try:
         encoded = json.dumps(data).encode("utf-8")
     except (TypeError, RecursionError) as error:
         raise SetupError(MALFORMED) from error
     validate_schema(encoded)
+    return entries

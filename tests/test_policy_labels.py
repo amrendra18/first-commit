@@ -46,7 +46,9 @@ class PolicyLabelTest(TemporaryRootTest):
     def refusal(self, value: dict[str, object]) -> str:
         with self.assertRaises(PolicyError) as caught:
             parse_policy(json.dumps({"schema_version": 1, **value}).encode(), self.root)
-        return str(caught.exception)
+        message, fix = str(caught.exception).split("\nfix: ")
+        self.assertTrue(fix.startswith("edit .repo-policy.json to match"))
+        return message
 
     def second_entry(self, field: str, **change: object) -> dict[str, object]:
         return {field: [VALID_ENTRIES[field], {**VALID_ENTRIES[field], **change}]}

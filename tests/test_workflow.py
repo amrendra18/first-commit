@@ -97,6 +97,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('FIRST_COMMIT_AUTHOR_NAME="CI"', setup)
         self.assertIn('FIRST_COMMIT_AUTHOR_EMAIL="ci@example.com"', setup)
         self.assertIn("first-commit setup --yes", setup)
+        self.assertIn("python -m pip install -e '.[test]'", runs)
         cleanup = job["steps"][-1]
         self.assertEqual("always()", cleanup.get("if"))
         delete = cleanup["run"].index('rm -f "$RUNNER_TEMP/test-ci-key"')

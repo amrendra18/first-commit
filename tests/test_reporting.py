@@ -76,6 +76,20 @@ class ReportingTest(unittest.TestCase):
         self.assertEqual("1", str(json.loads(machine)["schema_version"]))
         self.assertNotIn("ghp_", human + machine)
 
+    def test_json_finding_carries_its_commit_when_set(self) -> None:
+        unsigned = Finding(
+            rule_id="git.unsigned-commit",
+            path="<git-history>",
+            summary="Commit 16752607c459 has no signature.",
+            commit="16752607c459",
+            pushed=True,
+        )
+        plain = Finding(rule_id="text.final-newline", path="a.txt", summary="No.")
+        result = json.loads(render_json(Result("history", (unsigned, plain))))
+        with_commit, without = result["findings"]
+        self.assertEqual("16752607c459", with_commit["commit"])
+        self.assertNotIn("commit", without)
+
     def test_human_output_escapes_control_characters_in_paths(self) -> None:
         result = Result(
             scope="working",

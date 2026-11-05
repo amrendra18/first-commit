@@ -15,8 +15,15 @@ from first_commit.contributor import Contributor, ContributorError, create_contr
 from first_commit.git import GitError, IndexFileError
 from first_commit.gitleaks_ignore_format import IgnoreFileError
 from first_commit.gitleaks_scanner import DependencyError, ScannerTimeoutError
-from first_commit.models import Result, SetupError
+from first_commit.models import (
+    ConfirmationNeededError,
+    Result,
+    SetupCancelledError,
+    SetupError,
+    SetupTerminatedError,
+)
 from first_commit.paths import PathError
+from first_commit.policy import PolicyMissingError
 from first_commit.policy_fields import PolicyError
 from first_commit.private_values import PrivateValuesError
 from tests.cli_support import PROJECT, CliFixture
@@ -96,11 +103,17 @@ class FirstCommitCliTest(CliFixture):
         code, output, error = self.run_cli("check")
         self.assertEqual(2, code)
         self.assertEqual(
-            "error: The project policy file .repo-policy.json has unknown fields.\n",
+            "error: The project policy file .repo-policy.json has unknown fields.\n"
+            "fix: edit .repo-policy.json to match 'Project policy file' in the "
+            "first-commit ARCHITECTURE.md; the accepted fields are schema_version, "
+            "public_emails, commit_body_sections, public_environment_files, "
+            "forbidden_paths, private_literal_exceptions, privacy_detector_exceptions, "
+            "public_github_owner_urls, immutable_vendor_files.\n",
             error,
         )
         self.assertEqual("", output)
         self.assertNotIn(canary, error)
+        self.assertNotIn("additional_documents", error)
 
     def test_unreadable_configuration_names_the_file_and_the_next_step(self) -> None:
         policy = self.root / ".repo-policy.json"
@@ -147,7 +160,7 @@ class FirstCommitCliTest(CliFixture):
                     output, error = io.StringIO(), io.StringIO()
                     with redirect_stdout(output), redirect_stderr(error):
                         code = cli.main((command, "--root", folder))
-                    self.assertEqual((4, ""), (code, output.getvalue()))
+                    self.assertEqual((1, ""), (code, output.getvalue()))
                     self.assertIn("not inside a Git repository", error.getvalue())
                     self.assertIn("first-commit setup", error.getvalue())
 
@@ -174,7 +187,9 @@ class FirstCommitCliTest(CliFixture):
         passed = Result("test", ())
         with (
             patch("first_commit.validation.staged", return_value=passed) as staged,
-            patch("first_commit.cli._checks", return_value=[("all", passed)]) as checks,
+            patch(
+                "first_commit.cli._push_checks", return_value=[("all", passed)]
+            ) as checks,
         ):
             code, output, _ = self.run_cli("hook", "pre-commit")
             self.assertEqual(0, code)
@@ -189,31 +204,34 @@ class FirstCommitCliTest(CliFixture):
         passed = Result("test", ())
         with (
             patch("first_commit.validation.doctor", return_value=passed),
-            patch("first_commit.validation.working", return_value=passed),
-            patch("first_commit.validation.staged", return_value=passed),
+            patch("first_commit.validation.working") as working,
+            patch("first_commit.validation.staged") as staged,
             patch("first_commit.validation.history", return_value=passed),
         ):
             code, output, error = self.run_cli("hook", "pre-push")
         self.assertEqual((0, ""), (code, error))
-        self.assertEqual(
-            ["PASS doctor", "PASS working", "PASS staged", "PASS history"],
-            output.splitlines(),
-        )
+        self.assertEqual(["PASS doctor", "PASS history"], output.splitlines())
+        working.assert_not_called()
+        staged.assert_not_called()
 
     def test_error_classes_map_to_fixed_exit_codes(self) -> None:
         for error, expected in (
             (PolicyError("configuration"), 2),
+            (PolicyMissingError("missing policy"), 2),
             (SetupError("setup"), 2),
+            (ConfirmationNeededError("unconfirmed", Path("/")), 5),
+            (SetupCancelledError("cancelled"), 1),
+            (SetupTerminatedError("terminated"), 1),
             (IgnoreFileError("ignore file"), 2),
             (ContributorError("contributor"), 2),
             (PrivateValuesError("private values"), 2),
-            (DependencyError("dependency"), 3),
-            (ScannerTimeoutError("scanner timeout"), 3),
-            (GitError("git"), 4),
-            (IndexFileError("index file"), 4),
-            (CandidateError("candidate"), 4),
-            (PathError("path"), 4),
-            (OSError("operating system"), 4),
+            (DependencyError("dependency"), 1),
+            (ScannerTimeoutError("scanner timeout"), 1),
+            (GitError("git"), 1),
+            (IndexFileError("index file"), 1),
+            (CandidateError("candidate"), 1),
+            (PathError("path"), 1),
+            (OSError("operating system"), 1),
         ):
             with (
                 self.subTest(error=type(error).__name__),
@@ -223,12 +241,12 @@ class FirstCommitCliTest(CliFixture):
             self.assertEqual((expected, ""), (code, output))
             self.assertEqual(f"error: {error}\n", stderr)
 
-    def test_ctrl_c_prints_one_line_and_exits_two(self) -> None:
+    def test_ctrl_c_prints_one_line_and_exits_one(self) -> None:
         with patch("first_commit.validation.doctor", side_effect=KeyboardInterrupt):
             code, output, error = self.run_cli("doctor")
 
         self.assertEqual(
-            (2, "", "error: first-commit stopped on Ctrl-C.\n"), (code, output, error)
+            (1, "", "error: first-commit stopped on Ctrl-C.\n"), (code, output, error)
         )
 
     def test_invalid_arguments_are_not_echoed(self) -> None:
@@ -246,13 +264,13 @@ class FirstCommitCliTest(CliFixture):
             with self.subTest(content=content):
                 message.write_bytes(content)
                 code, output, error = self.run_cli("hook", "commit-msg", str(message))
-                self.assertEqual((4, ""), (code, output))
+                self.assertEqual((1, ""), (code, output))
                 self.assertNotIn("private-message-canary", error)
         with tempfile.TemporaryDirectory() as outside:
             external = Path(outside) / "message"
             external.write_text("private-message-canary\n", encoding="utf-8")
             code, output, error = self.run_cli("hook", "commit-msg", str(external))
-        self.assertEqual((4, ""), (code, output))
+        self.assertEqual((1, ""), (code, output))
         self.assertNotIn("private-message-canary", error)
 
     def test_commit_msg_hook_follows_commit_body_sections_fact(self) -> None:

@@ -8,11 +8,10 @@ from first_commit.contributor import (
 )
 from first_commit.gitleaks_scanner import DependencyError
 from first_commit.hooks import HTTPS_REPOSITORY, SSH_REPOSITORY
-from first_commit.models import SetupError
+from first_commit.models import SetupError, SetupTerminatedError
 from first_commit.policy import parse_policy
 from first_commit.private_values import load_private_values
 from first_commit.setup import SetupRequest, setup_repository
-from first_commit.setup_apply import SetupTerminatedError
 from first_commit.setup_files_plan import SetupOptions, files_plan
 from first_commit.setup_hooks import hook_bytes
 from first_commit.starter import IGNORE_FILE
@@ -148,7 +147,7 @@ class FirstCommitSetupTest(SetupFixture):
             "first_commit.setup_files_plan.importlib.metadata.distribution"
         ) as distribution:
             distribution.return_value.read_text.return_value = "wrong license"
-            with self.assertRaisesRegex(SetupError, "Packaged Apache"):
+            with self.assertRaisesRegex(DependencyError, "Packaged Apache"):
                 setup_repository(
                     self.root,
                     SetupRequest(
@@ -192,7 +191,9 @@ class FirstCommitSetupTest(SetupFixture):
         self.assertIn(b"One private value per line", values.read_bytes())
         self.assertEqual(
             (),
-            load_private_values(self.root, ".local/first-commit/private-values.txt"),
+            load_private_values(
+                self.root, ".local/first-commit/private-values.txt"
+            ).checked,
         )
         self.assertIn(
             "Private values: created .local/first-commit/private-values.txt;"

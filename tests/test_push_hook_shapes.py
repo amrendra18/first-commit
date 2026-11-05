@@ -8,7 +8,12 @@ from first_commit.hooks import HOOK_IDS, push_check_findings
 from first_commit.models import SetupError
 from first_commit.setup_hooks import HooksMissingError, check_hook_config, hook_bytes
 from tests.setup_support import REVISION
-from tests.support import TemporaryRootTest, initialize_repository, run_git
+from tests.support import (
+    TemporaryRootTest,
+    configure_remote,
+    initialize_repository,
+    run_git,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PUSH_HOOK = b"      - id: first-commit-push\n"
@@ -41,7 +46,6 @@ REFUSED: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 ACCEPTED: tuple[tuple[str, dict[str, Any]], ...] = (
     ("the plain hook", {}),
-    ("bin/ with --format", {"entry": "bin/first-commit hook pre-push --format json"}),
     ("--format in args", {"args": ["--format", "human"]}),
     ("the old stage name push", {"stages": ["push"]}),
 )
@@ -110,6 +114,13 @@ class PushHookShapeTest(TemporaryRootTest):
                 raw = _with_local_hook(_shaped(changes))
                 self.assertFalse(self.doctor_warns(raw))
                 check_hook_config(raw, REVISION)
+
+    def test_the_launcher_has_the_push_hook_shape_but_counts_only_here(self) -> None:
+        raw = _with_local_hook(
+            _shaped({"entry": "bin/first-commit hook pre-push --format json"})
+        )
+        check_hook_config(raw, REVISION)
+        self.assertTrue(self.doctor_warns(raw))
 
     def test_a_hook_without_stages_takes_stages_that_may_skip_the_push(self) -> None:
         default_stages = _with_local_hook(_shaped({"stages": None})).replace(
@@ -227,9 +238,7 @@ class PushHookShapeTest(TemporaryRootTest):
         for names in (("origin", "origin-x"), ("origin", "origin-x", "origin/x")):
             for name in names:
                 if name not in nested:
-                    run_git(
-                        self.root, "remote", "add", name, "https://example.invalid/x"
-                    )
+                    configure_remote(self.root, name, "https://example.invalid/x")
                     nested.append(name)
             with self.subTest(names=names):
                 rules = [item.rule_id for item in push_check_findings(self.root)]
@@ -239,7 +248,7 @@ class PushHookShapeTest(TemporaryRootTest):
 
     def test_a_remote_nested_in_other_case_gets_the_warning(self) -> None:
         for name in ("origin", "Origin/x"):
-            run_git(self.root, "remote", "add", name, "https://example.invalid/x")
+            configure_remote(self.root, name, "https://example.invalid/x")
         rules = [item.rule_id for item in push_check_findings(self.root)]
         self.assertEqual(["hooks.nested-remote"], rules)
 
@@ -256,8 +265,7 @@ class PushHookShapeTest(TemporaryRootTest):
         )
 
     def test_the_shipped_hook_and_this_repositorys_hook_file_count(self) -> None:
-        for raw in (
-            hook_bytes(REVISION),
-            (ROOT / ".pre-commit-config.yaml").read_bytes(),
-        ):
-            self.assertFalse(self.doctor_warns(raw))
+        self.assertFalse(self.doctor_warns(hook_bytes(REVISION)))
+        self.assertNotIn(
+            "hooks.push-check", {item.rule_id for item in push_check_findings(ROOT)}
+        )

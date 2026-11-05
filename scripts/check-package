@@ -32,6 +32,12 @@ export PIP_NO_CACHE_DIR=1
 "$smoke_dir/venv/bin/python" -m first_commit.cli version >/dev/null
 "$smoke_dir/venv/bin/first-commit" version >/dev/null
 "$smoke_dir/venv/bin/first-commit" setup --help >/dev/null
+if ! "$smoke_dir/venv/bin/first-commit" help --format markdown |
+  cmp -s - skills/first-commit/SKILL.md; then
+  printf '%s\n' 'error: skills/first-commit/SKILL.md differs from the installed wheel.' \
+    'fix: run bin/first-commit help --format markdown > skills/first-commit/SKILL.md' >&2
+  exit 1
+fi
 "$smoke_dir/venv/bin/python" -c 'from importlib.resources import files; assert files("first_commit").joinpath("data/commit-message.txt").read_bytes()'
 mkdir "$smoke_dir/blank"
 "$smoke_dir/venv/bin/first-commit" setup --dry-run --license apache-2.0 \

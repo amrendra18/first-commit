@@ -13,6 +13,7 @@ from first_commit.git import GitError, repository_root
 from first_commit.models import Candidate, Finding, Origin, Severity
 from first_commit.paths import PathError
 from first_commit.policy import REQUIRED_DOCUMENTS, parse_policy
+from first_commit.pushed import HISTORY_REVISIONS
 from first_commit.validation import (
     doctor,
     history,
@@ -222,6 +223,10 @@ class ValidationTest(ValidationFixture):
                 "first_commit.validation.evaluate",
                 side_effect=lambda found, *_: found.add(staged_findings),
             ),
+            patch(
+                "first_commit.validation.required_document_findings",
+                return_value=[],
+            ),
             patch("first_commit.validation._add_environment_findings"),
             patch("first_commit.validation.working_candidate_paths", return_value=()),
             patch(
@@ -240,7 +245,7 @@ class ValidationTest(ValidationFixture):
         self.assertEqual((self.marker,), result.findings)
 
     def test_staged_budget_stops_visible_marker_scan(self) -> None:
-        staged_findings = (self.marker,) * self.policy.max_findings
+        staged_findings = (self.marker,) * (self.policy.max_findings + 1)
         with (
             patch("first_commit.validation.staged_candidate_paths", return_value=()),
             patch(
@@ -250,6 +255,10 @@ class ValidationTest(ValidationFixture):
             patch(
                 "first_commit.validation.evaluate",
                 side_effect=lambda found, *_: found.add(staged_findings),
+            ),
+            patch(
+                "first_commit.validation.required_document_findings",
+                return_value=[],
             ),
             patch("first_commit.validation._add_environment_findings"),
             patch("first_commit.validation.working_candidate_paths", return_value=()),
@@ -301,7 +310,7 @@ class ValidationTest(ValidationFixture):
         ) as scanner:
             result = staged(self.root, self.policy)
         scanner.assert_called_once_with(
-            self.root, max_findings=self.policy.max_findings
+            self.root, max_findings=self.policy.max_findings + 1
         )
         self.assertEqual((finding,), result.findings)
         with patch(
@@ -309,7 +318,9 @@ class ValidationTest(ValidationFixture):
         ) as scanner:
             self.assertEqual((finding,), history(self.root, self.policy).findings)
         scanner.assert_called_once_with(
-            self.root, max_findings=self.policy.max_findings
+            self.root,
+            max_findings=self.policy.max_findings + 1,
+            revisions=HISTORY_REVISIONS,
         )
         with patch("first_commit.validation.scan_history", return_value=()):
             self.assertEqual((), history(self.root, self.policy).findings)
@@ -343,7 +354,9 @@ class ValidationTest(ValidationFixture):
         )
         policy = replace(self.policy, max_findings=2)
 
-        def scanner_order(*_: object, max_findings: int) -> tuple[Finding, ...]:
+        def scanner_order(
+            *_: object, max_findings: int, **__: object
+        ) -> tuple[Finding, ...]:
             return located[:max_findings]
 
         with patch("first_commit.validation.scan_history", side_effect=scanner_order):
@@ -361,7 +374,7 @@ class ValidationTest(ValidationFixture):
             [(item.path, item.line) for item in staged_result.findings],
         )
         self.assertEqual(
-            {"max_findings": policy.max_findings}, scanner.call_args.kwargs
+            {"max_findings": policy.max_findings + 1}, scanner.call_args.kwargs
         )
 
     def test_validation_has_no_project_coverage_scope(self) -> None:
@@ -450,7 +463,7 @@ class EvaluateCandidatesTest(unittest.TestCase):
 
     def test_marker_consumes_budget_before_privacy(self) -> None:
         limited = replace(self.policy, max_findings=1)
-        candidate = Candidate("scratch.txt", b"# @no-commit\n", Origin.WORKTREE)
+        candidate = Candidate("scratch.txt", b"# @no-commit\n" * 2, Origin.WORKTREE)
         with patch("first_commit.finding_collector.privacy_findings") as privacy_check:
             result = evaluate_candidates(
                 "working", [candidate], limited, self.documents
@@ -460,7 +473,7 @@ class EvaluateCandidatesTest(unittest.TestCase):
 
     def test_text_finding_consumes_budget_before_privacy(self) -> None:
         limited = replace(self.policy, max_findings=1)
-        candidate = Candidate("scratch.txt", b"trailing space \n", Origin.WORKTREE)
+        candidate = Candidate("scratch.txt", b"trailing space \n" * 2, Origin.WORKTREE)
         with patch("first_commit.finding_collector.privacy_findings") as privacy_check:
             result = evaluate_candidates(
                 "working", [candidate], limited, self.documents
@@ -472,7 +485,7 @@ class EvaluateCandidatesTest(unittest.TestCase):
         limited = replace(self.policy, max_findings=1)
         private = "private@" + "nonexample.dev"
         candidates = [
-            Candidate("first.txt", (private + "\n").encode(), Origin.WORKTREE),
+            Candidate("first.txt", (private + "\n").encode() * 2, Origin.WORKTREE),
             Candidate("second.txt", b"# @no-commit\n", Origin.WORKTREE),
         ]
         with patch("first_commit.finding_collector.no_commit_findings") as marker_check:

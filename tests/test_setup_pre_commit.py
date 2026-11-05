@@ -15,7 +15,7 @@ from first_commit.contributor import (
 )
 from first_commit.gitleaks_scanner import DependencyError
 from first_commit.hooks import hook_ready
-from first_commit.models import SetupError
+from first_commit.models import SetupError, SetupFailedError
 from first_commit.pre_commit_runner import (
     progress_heartbeat,
     run_pre_commit,
@@ -264,7 +264,7 @@ class PreCommitSetupTest(SetupFixture):
         with patch(
             "first_commit.setup_apply.run_pre_commit", side_effect=concurrent_change
         ):
-            with self.assertRaisesRegex(SetupError, "new .git folder changed"):
+            with self.assertRaisesRegex(SetupFailedError, "new .git folder changed"):
                 setup_repository(
                     self.root,
                     SetupRequest(revision=REVISION, confirmed=True),
@@ -289,7 +289,9 @@ class PreCommitSetupTest(SetupFixture):
         with patch(
             "first_commit.setup_apply.run_pre_commit", side_effect=edited_failure
         ):
-            with self.assertRaises(DependencyError):
+            with self.assertRaisesRegex(
+                SetupFailedError, "left the Git settings as they are"
+            ):
                 setup_repository(
                     self.root, SetupRequest(revision=REVISION), contributor=self.person
                 )
@@ -316,7 +318,7 @@ class PreCommitSetupTest(SetupFixture):
         with patch(
             "first_commit.setup_apply.run_pre_commit", side_effect=symlink_failure
         ):
-            with self.assertRaisesRegex(SetupError, "recovery failed"):
+            with self.assertRaisesRegex(SetupFailedError, "recovery failed"):
                 setup_repository(
                     self.root, SetupRequest(revision=REVISION), contributor=self.person
                 )

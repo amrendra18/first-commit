@@ -2,9 +2,11 @@ import hashlib
 import subprocess
 import tempfile
 import unittest
+from collections.abc import Collection
 from pathlib import Path
 from unittest import mock
 
+from first_commit.git_attributes import configured_drivers
 from first_commit.gitleaks import scan_history, scan_pushed, scan_staged
 from first_commit.gitleaks_ignore import check_ignore_file
 from first_commit.gitleaks_ignore_format import (
@@ -23,6 +25,9 @@ HISTORY = ("--all",)
 # Split so this file holds no private-key block.
 HEADER = b"-----BEGIN RSA " + b"PRIVATE KEY-----\n"
 FOOTER = b"-----END RSA " + b"PRIVATE KEY-----\n"
+
+GIT_CALLS_WITHOUT_LFS = 6
+GIT_CALLS_WITH_LFS = 9
 
 
 def _key(fill: bytes) -> bytes:
@@ -109,6 +114,7 @@ class HistoryDigestTest(RepositoryTest):
         scope = PushedScope(self.head(), "origin")
 
         self.refused(push_revisions(self.root, scope), f"commit {older}")
+        run_git(self.root, "remote", "add", "origin", "https://example.invalid/o")
         run_git(self.root, "update-ref", "refs/remotes/origin/main", older)
         check_ignore_file(self.root, push_revisions(self.root, scope))
 
@@ -158,14 +164,30 @@ class BoundedReadTest(RepositoryTest):
             check_ignore_file(self.root)
         return len(started)
 
-    def test_git_process_count_does_not_grow_with_the_entries(self) -> None:
-        self.stage_files(1)
-        one = self.processes()
-        self.stage_files(6)
+    def counted(self, count: int) -> int:
+        self.stage_files(count)
+        return self.processes()
 
-        # ls-files, two reads of .gitleaksignore, one batch-check, one batch read.
-        self.assertEqual(5, one)
-        self.assertEqual(5, self.processes())
+    def test_git_process_count_without_the_lfs_filter(self) -> None:
+        def no_filter(
+            root: Path, section: str, settings: Collection[str]
+        ) -> set[bytes]:
+            configured_drivers(root, section, settings)
+            return set()
+
+        with mock.patch("first_commit.candidates.configured_drivers", no_filter):
+            self.assertEqual(
+                (GIT_CALLS_WITHOUT_LFS, GIT_CALLS_WITHOUT_LFS),
+                (self.counted(1), self.counted(6)),
+            )
+
+    def test_git_process_count_with_the_lfs_filter(self) -> None:
+        run_git(self.root, "config", "filter.lfs.clean", "git-lfs clean -- %f")
+        run_git(self.root, "config", "filter.lfs.process", "git-lfs filter-process")
+        self.assertEqual(
+            (GIT_CALLS_WITH_LFS, GIT_CALLS_WITH_LFS),
+            (self.counted(1), self.counted(6)),
+        )
 
     def test_read_limits_are_refused(self) -> None:
         self.stage_files(2)

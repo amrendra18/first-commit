@@ -7,7 +7,11 @@ from pathlib import Path
 from unittest import mock
 
 from first_commit.contributor import Contributor
-from first_commit.finding_collector import FindingCollector, evaluate
+from first_commit.finding_collector import (
+    FindingCollector,
+    evaluate,
+    required_document_findings,
+)
 from first_commit.models import Candidate, Finding, Origin, Result, Severity
 from first_commit.policy import REQUIRED_DOCUMENTS, Policy, parse_policy
 from first_commit.reporting import json_value
@@ -34,7 +38,8 @@ def evaluate_candidates(
     private_values: Sequence[str] = (),
 ) -> Result:
     found = FindingCollector(policy.max_findings)
-    evaluate(found, candidates, policy, documents, private_values)
+    found.add(required_document_findings(documents, ()))
+    evaluate(found, candidates, policy, private_values)
     return found.result(scope)
 
 

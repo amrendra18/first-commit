@@ -7,17 +7,16 @@ from pathlib import Path
 from unittest import mock
 
 from first_commit import cli
+from first_commit.git import GitError, listed_commits
 from first_commit.gitleaks import scan_history, scan_pushed
 from first_commit.gitleaks_scanner import (
     CALIBRATION_INPUT,
     HISTORY_TIMEOUT_SECONDS,
-    SCAN_TIMEOUT_SECONDS,
     DependencyError,
 )
 from first_commit.models import Result
 from first_commit.pushed import (
-    HISTORY_REVISIONS,
-    MAX_REVISION_BYTES,
+    PUSHED_REFS,
     PushedScope,
     push_revisions,
     pushed_scope,
@@ -29,7 +28,7 @@ from tests.gitleaks_support import (
     needs_real_scanner,
     pushed_base_commit,
 )
-from tests.support import initialize_repository, run_git
+from tests.support import configure_remote, initialize_repository, run_git
 
 START = "a" * 40
 END = "b" * 40
@@ -59,52 +58,130 @@ class PushedScopeTest(unittest.TestCase):
             {"PRE_COMMIT_TO_REF": "HEAD"},
         ):
             with self.subTest(environment=environment):
-                self.assertIsNone(pushed_scope(environment))
+                self.assertEqual(PushedScope(None, None), pushed_scope(environment))
+        self.assertEqual(
+            PushedScope(None, "origin"),
+            pushed_scope({"PRE_COMMIT_REMOTE_NAME": "origin"}),
+        )
 
-    def test_revisions_exclude_only_the_remote_tips(self) -> None:
+    def test_a_push_without_a_to_ref_uses_the_local_branch(self) -> None:
+        for branch in ("refs/heads/main", "refs/heads/feature/a-1.2", END):
+            with self.subTest(branch=branch):
+                environment = {
+                    "PRE_COMMIT_LOCAL_BRANCH": branch,
+                    "PRE_COMMIT_REMOTE_NAME": "mirror",
+                }
+                self.assertEqual(
+                    PushedScope(branch, "mirror"), pushed_scope(environment)
+                )
+                self.assertTrue(pushed_scope(environment).valid)
+        for branch in (
+            "HEAD",
+            "main",
+            "refs/tags/v1",
+            "refs/heads/a..b",
+            "refs/heads/-x",
+            "refs/heads/a b",
+            "refs/heads/a^",
+            "refs/heads/a@{1}",
+            "b" * 12,
+        ):
+            with self.subTest(branch=branch):
+                environment = {"PRE_COMMIT_LOCAL_BRANCH": branch}
+                self.assertEqual(PushedScope(None, None), pushed_scope(environment))
+        named = {"PRE_COMMIT_TO_REF": START, "PRE_COMMIT_LOCAL_BRANCH": "refs/heads/x"}
+        self.assertEqual(PushedScope(START, None), pushed_scope(named))
+        self.assertFalse(PushedScope("refs/heads/a..b", None).valid)
+
+    def test_a_local_branch_is_read_as_its_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             initialize_repository(root)
-            (root / "a.txt").write_text("a\n", "utf-8")
+            (root / "a.txt").write_text("a\n", encoding="utf-8")
             commit_fixture(root, "a.txt")
-            first = _head(root)
-            (root / "a.txt").write_text("b\n", "utf-8")
-            commit_fixture(root, "a.txt")
-            second = _head(root)
-            run_git(root, "remote", "add", "origin/x", "https://example.invalid/x")
-            run_git(root, "update-ref", "refs/remotes/origin/main", first)
-            run_git(root, "update-ref", "refs/remotes/origin/x/main", second)
+            head = _head(root)
+            scope = pushed_scope({"PRE_COMMIT_LOCAL_BRANCH": "refs/heads/main"})
+
+            self.assertEqual((head, *PUSHED_REFS), push_revisions(root, scope))
+            self.assertEqual((head,), push_revisions(root, scope, every_ref=False))
+            for ref in ("refs/heads/gone", "-x", "refs/heads/a..b"):
+                with self.subTest(ref=ref), self.assertRaises(GitError):
+                    push_revisions(root, PushedScope(ref, None))
+            with (
+                mock.patch("first_commit.pushed.run_git", return_value=b"main\n"),
+                self.assertRaisesRegex(GitError, "invalid commit"),
+            ):
+                push_revisions(root, scope)
+
+    def test_revisions_leave_out_the_configured_remote_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize_repository(root)
+            run_git(root, "remote", "add", "origin", "https://example.invalid/o")
 
             self.assertEqual(
-                (END, *HISTORY_REVISIONS, "--not", first),
+                (END, *PUSHED_REFS, "--not", "--remotes=origin"),
                 push_revisions(root, PushedScope(END, "origin")),
             )
             self.assertEqual(
-                (END, *HISTORY_REVISIONS),
-                push_revisions(root, PushedScope(END, "upstream")),
+                (*PUSHED_REFS, "--not", "--remotes=origin"),
+                push_revisions(root, PushedScope(None, "origin")),
             )
             self.assertEqual(
-                (END, *HISTORY_REVISIONS), push_revisions(root, PushedScope(END, None))
+                (END, "--not", "--remotes=origin"),
+                push_revisions(root, PushedScope(END, "origin"), every_ref=False),
             )
+            for remote in ("upstream", None):
+                with self.subTest(remote=remote):
+                    self.assertEqual(
+                        (END, *PUSHED_REFS),
+                        push_revisions(root, PushedScope(END, remote)),
+                    )
 
-    def test_a_remote_named_in_other_case_keeps_its_refs_out(self) -> None:
+    def test_refs_of_a_nested_remote_in_any_case_are_not_the_remote_refs(
+        self,
+    ) -> None:
         # On a case-insensitive disk, Git files refs of Origin/x under origin/x/.
+        for nested in ("origin/x", "Origin/x"):
+            with self.subTest(nested=nested), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                initialize_repository(root)
+                (root / "a.txt").write_text("a\n", "utf-8")
+                commit_fixture(root, "a.txt")
+                first = _head(root)
+                (root / "a.txt").write_text("b\n", "utf-8")
+                commit_fixture(root, "a.txt")
+                second = _head(root)
+                run_git(root, "remote", "add", "origin", "https://example.invalid/o")
+                configure_remote(root, nested, "https://example.invalid/x")
+                run_git(root, "update-ref", "refs/remotes/origin/main", first)
+                run_git(root, "update-ref", "refs/remotes/origin/x/deep/main", second)
+
+                revisions = push_revisions(root, PushedScope(second, "origin"))
+
+                self.assertEqual(
+                    (
+                        second,
+                        *PUSHED_REFS,
+                        "--not",
+                        "--exclude=[oO][rR][iI][gG][iI][nN]/[xX]/*",
+                        "--remotes=origin",
+                    ),
+                    revisions,
+                )
+                self.assertEqual([second], listed_commits(root, (*revisions, "--")))
+
+    def test_a_nested_remote_that_no_pattern_can_name_leaves_nothing_out(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             initialize_repository(root)
-            (root / "a.txt").write_text("a\n", "utf-8")
-            commit_fixture(root, "a.txt")
-            first = _head(root)
-            (root / "a.txt").write_text("b\n", "utf-8")
-            commit_fixture(root, "a.txt")
-            second = _head(root)
-            run_git(root, "remote", "add", "Origin/x", "https://example.invalid/x")
-            run_git(root, "update-ref", "refs/remotes/origin/main", first)
-            run_git(root, "update-ref", "refs/remotes/origin/x/main", second)
+            run_git(root, "remote", "add", "origin", "https://example.invalid/o")
+            run_git(root, "config", "remote.origin/a*.url", "https://example.invalid/x")
 
             self.assertEqual(
-                (END, *HISTORY_REVISIONS, "--not", first),
-                push_revisions(root, PushedScope(END, "origin")),
+                (END, *PUSHED_REFS), push_revisions(root, PushedScope(END, "origin"))
             )
 
     def test_remotes_that_differ_only_in_case_scan_all_local_commits(self) -> None:
@@ -121,25 +198,11 @@ class PushedScopeTest(unittest.TestCase):
             for remote in ("origin", "ORIGIN"):
                 with self.subTest(remote=remote):
                     self.assertEqual(
-                        (END, *HISTORY_REVISIONS),
+                        (END, *PUSHED_REFS),
                         push_revisions(root, PushedScope(END, remote)),
                     )
 
-    def test_too_many_remote_tips_scan_all_local_commits(self) -> None:
-        tips = tuple(f"{number:040x}" for number in range(2000))
-        scope = PushedScope(END, "origin")
-        with mock.patch("first_commit.pushed._remote_tips", return_value=tips):
-            self.assertEqual(
-                (END, *HISTORY_REVISIONS), push_revisions(Path("/repository"), scope)
-            )
-        with mock.patch("first_commit.pushed._remote_tips", return_value=tips[:100]):
-            self.assertEqual(
-                (END, *HISTORY_REVISIONS, "--not", *tips[:100]),
-                push_revisions(Path("/repository"), scope),
-            )
-        self.assertGreater(len(" ".join(tips)), MAX_REVISION_BYTES)
-
-    def test_scope_scan_passes_log_options_and_the_shorter_timeout(self) -> None:
+    def test_scope_scan_passes_log_options_and_the_history_timeout(self) -> None:
         calls = []
 
         def record(arguments, **keywords):
@@ -158,11 +221,16 @@ class PushedScopeTest(unittest.TestCase):
                 max_findings=1,
             )
 
-        self.assertEqual(HISTORY_TIMEOUT_SECONDS, calls[2][1])
-        self.assertIn("--log-opts=--exclude=refs/stash --all", calls[2][0])
-        self.assertEqual(SCAN_TIMEOUT_SECONDS, calls[5][1])
-        self.assertIn(f"--log-opts={END} --exclude=refs/stash --all", calls[5][0])
-        self.assertNotIn("--reflog", " ".join(calls[5][0]))
+        scans = [call for call in calls if call[0][:2] == ["/gitleaks", "git"]]
+        self.assertEqual(HISTORY_TIMEOUT_SECONDS, scans[0][1])
+        self.assertIn(
+            "--log-opts=--no-textconv --exclude=refs/stash --all", scans[0][0]
+        )
+        self.assertEqual(HISTORY_TIMEOUT_SECONDS, scans[1][1])
+        self.assertIn(
+            f"--log-opts=--no-textconv {END} --branches --remotes", scans[1][0]
+        )
+        self.assertNotIn("--reflog", " ".join(scans[1][0]))
 
     def test_invalid_scope_and_unreadable_remote_refs_are_refused(self) -> None:
         for scope in (
@@ -187,19 +255,6 @@ class PushedScopeTest(unittest.TestCase):
                     executable="/gitleaks",
                     max_findings=1,
                 )
-        with (
-            mock.patch(
-                "first_commit.pushed.run_git",
-                side_effect=(b"", b"HEAD refs/remotes/origin/main\n"),
-            ),
-            self.assertRaisesRegex(DependencyError, "remote's commits"),
-        ):
-            scan_pushed(
-                Path("/repository"),
-                PushedScope(END, "origin"),
-                executable="/gitleaks",
-                max_findings=1,
-            )
 
     def test_pre_push_scans_the_pushed_scope_and_check_scans_all(self) -> None:
         passed = Result("test", ())
@@ -225,6 +280,17 @@ class PushedScopeTest(unittest.TestCase):
                     mock.patch(
                         "first_commit.validation.history", return_value=passed
                     ) as history,
+                    mock.patch(
+                        "first_commit.validation.unsigned_commit_findings",
+                        return_value=[],
+                    ),
+                    mock.patch(
+                        "first_commit.validation.pushed_versions", return_value=[]
+                    ),
+                    mock.patch(
+                        "first_commit.validation.pushed_privacy_findings",
+                        return_value=[],
+                    ),
                     redirect_stdout(io.StringIO()),
                 ):
                     self.assertEqual(0, cli.main((*stage, "--root", str(root))))
@@ -241,6 +307,7 @@ class RealPushScanTest(unittest.TestCase):
         (self.root / "old.txt").write_bytes(CALIBRATION_INPUT)
         commit_fixture(self.root, "old.txt")
         # The remote already holds the old secret, so a push does not rescan it.
+        run_git(self.root, "remote", "add", "origin", "https://example.invalid/o")
         run_git(self.root, "update-ref", "refs/remotes/origin/main", _head(self.root))
         (self.root / "new.txt").write_text("clean\n", encoding="utf-8")
         commit_fixture(self.root, "new.txt")
@@ -288,7 +355,7 @@ class RealPushScanTest(unittest.TestCase):
         run_git(self.root, "checkout", "-q", "-b", "side")
         side = self.secret_commit("side.txt")
         run_git(self.root, "checkout", "-q", "main")
-        run_git(self.root, "remote", "add", "origin/x", "https://example.invalid/x")
+        configure_remote(self.root, "origin/x", "https://example.invalid/x")
         run_git(self.root, "update-ref", "refs/remotes/origin/x/main", side)
 
         findings = scan_pushed(self.root, PushedScope(main, "origin"), max_findings=1)
@@ -302,6 +369,11 @@ class StashTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        unsigned = mock.patch(
+            "first_commit.validation.unsigned_commit_findings", return_value=[]
+        )
+        unsigned.start()
+        self.addCleanup(unsigned.stop)
         pushed_base_commit(self.root)
         (self.root / "notes.txt").write_text("clean\n", encoding="utf-8")
         commit_fixture(self.root, "notes.txt")

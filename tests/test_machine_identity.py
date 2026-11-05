@@ -67,6 +67,10 @@ class IdentityFileTest(unittest.TestCase):
             Path("/h/.config/first-commit/identity.json"),
             identity_path({"HOME": "/h"}),
         )
+        self.assertEqual(
+            Path("/h/.config/first-commit/identity.json"),
+            identity_path({"XDG_CONFIG_HOME": "relative/config", "HOME": "/h"}),
+        )
 
     def test_save_then_load_round_trips_with_owner_only_modes(self) -> None:
         path = self.home / "deep" / "identity.json"
@@ -152,12 +156,12 @@ class CloneRevisionTest(unittest.TestCase):
         with self.assertRaises(SetupError) as error:
             configured_source(self.root)
         self.assertIn("rev to v0.3.0", str(error.exception))
-        self.assertIn("pre-commit autoupdate --freeze", str(error.exception))
+        self.assertIn("`git ls-remote` line of Install", str(error.exception))
         self.write(hook_config(revision="private-canary"))
         with self.assertRaises(SetupError) as error:
             configured_source(self.root)
         self.assertNotIn("private-canary", str(error.exception))
-        self.assertIn("pre-commit autoupdate --freeze", str(error.exception))
+        self.assertIn("`git ls-remote` line of Install", str(error.exception))
 
     def test_a_frozen_revision_with_its_tag_comment_is_accepted(self) -> None:
         self.write(

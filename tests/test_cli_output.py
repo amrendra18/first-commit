@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 from first_commit import cli
 from first_commit.gitleaks_scanner import DependencyError
-from first_commit.models import Finding, Result, Severity
+from first_commit.models import (
+    Finding,
+    Result,
+    Severity,
+)
 from first_commit.reporting import NEXT_ACTION
 from first_commit.setup_command import SETUP_HOOK_COMMAND
 from first_commit.setup_hooks import hook_bytes
@@ -127,7 +131,7 @@ class CliOutputTest(CliFixture):
             ),
         ):
             code, output, error = self.run_cli("check")
-        self.assertEqual(3, code)
+        self.assertEqual(1, code)
         self.assertIn("PASS doctor", output)
         self.assertIn("PASS staged", output)
         self.assertIn("scanner unavailable", error)

@@ -26,8 +26,9 @@ For each case:
    snapshot) for pinned hooks, or with `pip install -e` from the snapshot for local hooks.
    The feature fails if the install makes no `bin/first-commit`.
 2. In a new folder, write the project-owned `.pre-commit-config.yaml`, run setup (through
-   the snapshot source, like the setup feature), remove the markers, and make the first commit
-   with the installed tool on `PATH`.
+   the snapshot source, like the setup feature), remove the markers, and make the first commit,
+   each with the installed tool on `PATH`. Setup needs it there for local hooks, which run
+   `first-commit` from `PATH`.
 3. Unset `user.useConfigOnly` and try a commit.
 4. Read the command from the `fix:` line and run it exactly as printed.
 5. Commit again.

@@ -19,7 +19,13 @@ from first_commit.checks.messages import TYPES, message_findings
 from first_commit.checks.privacy import PrivacyPolicy, privacy_findings
 from first_commit.fixes import HOOK_FIXES
 from first_commit.gitleaks_scanner import SCANNER_VERSION
-from first_commit.hooks import GITHUB_REPOSITORY, HTTPS_REPOSITORY, SSH_REPOSITORY
+from first_commit.hooks import (
+    GITHUB_REPOSITORY,
+    HOOK_TYPES,
+    HTTPS_REPOSITORY,
+    REVISION,
+    SSH_REPOSITORY,
+)
 from first_commit.models import Candidate, Origin
 from first_commit.policy import parse_policy
 from first_commit.policy_fields import DEFAULT_LIMITS
@@ -39,7 +45,7 @@ PUBLIC_TEXTS = (
     "SECURITY.md",
     "CONTRIBUTING.md",
     "ARCHITECTURE.md",
-    ".agents/skills/first-commit/SKILL.md",
+    "skills/first-commit/SKILL.md",
     ".github/ISSUE_TEMPLATE/bug_report.md",
     "verify/features/README.md",
     "pyproject.toml",
@@ -55,6 +61,7 @@ EXAMPLE_MESSAGE_HEADING = "Example message:\n\n```text\n"
 HOOK_LINES_HEADING = "Expected hook lines:\n\n```text\n"
 DIGEST_LINE = re.compile(r"^awk .*shasum -a 256$", re.MULTILINE)
 VERSION = re.compile(r"\b\d+\.\d+\.\d+\b")
+TAG_COMMIT_LINE = re.compile(r"^git ls-remote (\S+) '(v[^']+)\^\{\}'$", re.MULTILINE)
 PRIVATE = "Private Person"
 
 
@@ -187,6 +194,63 @@ class ReadmeTest(unittest.TestCase):
                 line = content.split("\n")[1]
                 self.assertEqual(hashlib.sha256(line.encode()).hexdigest(), digest)
 
+    def test_upgrade_pins_the_commit_of_an_annotated_tag(self) -> None:
+        self.assertIn(
+            "Run the `git ls-remote` line of [Install](#install) with the new tag. "
+            "In `.pre-commit-config.yaml`, set the first-commit `rev:` to the "
+            "printed SHA.",
+            _section("Upgrade"),
+        )
+        install = README.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]
+        found = TAG_COMMIT_LINE.search(install)
+        if found is None:
+            self.fail("README Install has no git ls-remote line")
+        command, address, tag = found.group(0, 1, 2)
+        self.assertEqual(HTTPS_REPOSITORY, address)
+        with tempfile.TemporaryDirectory() as folder:
+            git = ("-c", "user.name=Example", "-c", "user.email=public@example.net")
+            subprocess.run(["git", "init", "-q", folder], check=True)
+            for arguments in (
+                ("-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty"),
+                ("-c", "tag.gpgsign=false", "tag", "-a", "v9.9.9"),
+            ):
+                subprocess.run(
+                    ["git", "-C", folder, *git, *arguments, "-m", "Release"],
+                    check=True,
+                )
+            printed = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    command.replace(address, folder).replace(tag, "v9.9.9"),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.split()[0]
+            commit, tag_object = (
+                subprocess.run(
+                    ["git", "-C", folder, "rev-parse", name],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+                for name in ("v9.9.9^{commit}", "v9.9.9")
+            )
+        self.assertEqual(commit, printed)
+        self.assertNotEqual(tag_object, printed)
+        self.assertRegex(printed, REVISION)
+
+    def test_remove_uninstalls_every_hook_type_setup_installs(self) -> None:
+        block = _block(README.split("\n## Remove\n", 1)[1], "```sh\n")
+        uninstall = [
+            line for line in block.splitlines() if line.startswith("pre-commit ")
+        ]
+        self.assertEqual(
+            ["pre-commit uninstall " + " ".join(f"-t {t}" for t in HOOK_TYPES)],
+            uninstall,
+        )
+
 
 class PublicFactsTest(unittest.TestCase):
     def test_install_tag_is_the_package_version_and_can_be_checked(self) -> None:
@@ -195,8 +259,7 @@ class PublicFactsTest(unittest.TestCase):
         self.assertIn(f"git ls-remote {HTTPS_REPOSITORY} 'v{__version__}^{{}}'", README)
 
     def test_readme_names_the_version_command(self) -> None:
-        self.assertIn('"$FIRST_COMMIT" version\n', README)
-        self.assertIn("`--version`", README)
+        self.assertIn("\nfirst-commit --version\n", README)
         output = io.StringIO()
         with redirect_stdout(output):
             self.assertEqual(0, cli.main(("version",)))
@@ -303,6 +366,58 @@ class PublicFactsTest(unittest.TestCase):
         for text in (_section("Stop and recover"), _section("Limits", ARCHITECTURE)):
             self.assertIn(f"`{first_sentence}.`", text)
         self.assertIn("`node_modules/`", _section("Stop and recover"))
+
+    def test_readme_claims_only_the_signing_check_the_hooks_make(self) -> None:
+        self.assertNotIn("unsigned commit", " ".join(README.split()))
+        self.assertIn("2. turns on SSH commit signing;", README)
+        self.assertIn(
+            "| Commit message | Format and review sections, secrets, private values, "
+            "identity, and signing settings |",
+            README,
+        )
+        self.assertIn(
+            "`git commit --no-gpg-sign` makes an unsigned commit that the commit "
+            "hooks pass. The pre-push hook stops that commit, but only checks that "
+            "a signature is there",
+            " ".join(_section("Threats and known gaps", ARCHITECTURE).split()),
+        )
+
+    def test_push_row_names_only_what_the_push_scan_reads(self) -> None:
+        self.assertIn(
+            "| Push | Signatures (commits since setup), plus secrets, keys, home paths, "
+            "emails, private values, "
+            "and file size in the pushed commits, their messages, and tags |",
+            README,
+        )
+        self.assertIn(
+            "The history scan of `check` looks for private values in commit and tag "
+            "messages only, not in the files of commits.",
+            " ".join(_section("Threats and known gaps", ARCHITECTURE).split()),
+        )
+
+    def test_clone_and_upgrade_cover_installed_form_hooks(self) -> None:
+        self.assertIn(
+            "With `--hooks installed`, a clone needs first-commit; run "
+            "`first-commit setup`.",
+            _section("Set up a clone"),
+        )
+        self.assertIn(
+            "With `--hooks installed`, only step 1 applies.",
+            _section("Upgrade"),
+        )
+
+    def test_policy_table_says_the_digest_decides_and_line_is_a_label(self) -> None:
+        table = _section("Project policy file", ARCHITECTURE)
+        self.assertIn(
+            "Allows one copy of that line anywhere in the file: `line` is a label "
+            "and a uniqueness key, and the digest decides",
+            table,
+        )
+        self.assertIn(
+            "For `privacy.private-key`, `sha256` hashes the whole file and `line` "
+            "names the approved line",
+            table,
+        )
 
     def test_first_run_names_the_printed_results_and_the_trust_fix(self) -> None:
         first_run = _section("Start a project")

@@ -8,7 +8,16 @@ from typing import NamedTuple
 from first_commit import __version__
 from first_commit.checks.templates import read_template
 from first_commit.generated_files import proposal_name
-from first_commit.hooks import HTTPS_REPOSITORY
+from first_commit.gitleaks_scanner import DependencyError
+from first_commit.hooks import (
+    HTTPS_REPOSITORY,
+    LOCAL_REPOSITORY,
+    foreign_launcher,
+    hook_entries,
+    installed_command_problem,
+    load_hook_config,
+    runs_installed_command,
+)
 from first_commit.models import SetupError
 from first_commit.paths import PathError
 from first_commit.policy import POLICY_PATH, parse_policy
@@ -24,6 +33,7 @@ from first_commit.setup_hooks import (
     HooksMissingError,
     check_hook_config,
     hook_bytes,
+    local_hook_bytes,
 )
 from first_commit.starter import (
     DOCUMENT_SETS,
@@ -43,6 +53,10 @@ RERUN_WITH_REVISION = (
 REVISION_REQUIRED = (
     "Setup needs an immutable Git revision; use --revision FULL_SHA.\n"
     f"fix: {RERUN_WITH_REVISION}."
+)
+INSTALLED_COMMAND_FIX = (
+    "fix: put first-commit on PATH in a folder outside this repository (see Install "
+    "in the first-commit README), then rerun setup"
 )
 LOCAL_IGNORE_LINES = (b".local/", b".local", b"/.local", b"/.local/", b".local/*")
 LOCAL_NOT_IGNORED = (
@@ -68,19 +82,44 @@ def _required_revision(options: SetupOptions) -> str:
     return options.revision
 
 
+def _require_installed_command(root: Path, alternative: str = "") -> None:
+    problem = installed_command_problem(root)
+    if problem is not None:
+        raise DependencyError(
+            f"Setup stopped: {problem}\n{INSTALLED_COMMAND_FIX}{alternative}."
+        )
+
+
+def _hook_file(root: Path, options: SetupOptions) -> bytes:
+    if options.source != LOCAL_REPOSITORY:
+        return hook_bytes(_required_revision(options), options.source)
+    _require_installed_command(root, "; or rerun setup with --hooks pinned")
+    return local_hook_bytes()
+
+
 class FilesPlan(NamedTuple):
     pending: dict[Path, bytes]
     kept: tuple[str, ...]
 
 
+def _onboarding_source(existing: bytes | None, options: SetupOptions) -> str:
+    if existing is None:
+        return options.source
+    if runs_installed_command(hook_entries(load_hook_config(existing))):
+        return LOCAL_REPOSITORY
+    return HTTPS_REPOSITORY if options.source == LOCAL_REPOSITORY else options.source
+
+
 def _starter_plan(root: Path, options: SetupOptions) -> FilesPlan:
     pending: dict[Path, bytes] = {}
     kept: list[str] = []
-    writes_hooks = read_if_present(root / HOOK_CONFIG) is None
+    existing_hooks = read_if_present(root / HOOK_CONFIG)
+    writes_hooks = existing_hooks is None
+    writes_setup_hook = writes_hooks and options.source != LOCAL_REPOSITORY
     generated = starter_files(
         options.docs,
-        source=options.source,
-        setup_hook=writes_hooks or declares_hook(root, SETUP_HOOK_ID),
+        source=_onboarding_source(existing_hooks, options),
+        setup_hook=writes_setup_hook or declares_hook(root, SETUP_HOOK_ID),
         check_hook=writes_hooks or declares_hook(root, CHECK_HOOK_ID),
     )
     for name, content in generated.items():
@@ -113,7 +152,7 @@ def _license_bytes() -> bytes:
             encoding="utf-8"
         )
     if hashlib.sha256(content.encode("utf-8")).hexdigest() != LICENSE_DIGEST:
-        raise SetupError("Packaged Apache-2.0 license is unavailable.")
+        raise DependencyError("Packaged Apache-2.0 license is unavailable.")
     return content.encode("utf-8")
 
 
@@ -149,18 +188,20 @@ def _support_plan(root: Path, options: SetupOptions) -> dict[Path, bytes]:
     pending: dict[Path, bytes] = {}
     existing_hooks = read_if_present(root / HOOK_CONFIG)
     if existing_hooks is None:
-        pending[root / HOOK_CONFIG] = hook_bytes(
-            _required_revision(options), options.source
-        )
+        pending[root / HOOK_CONFIG] = _hook_file(root, options)
     else:
         try:
-            check_hook_config(existing_hooks, options.revision)
+            entries = check_hook_config(existing_hooks, options.revision)
         except HooksMissingError as error:
-            if options.revision is not None:
-                error.proposal = PROPOSAL_HEADER.encode("utf-8") + hook_bytes(
-                    options.revision, options.source
+            if options.source == LOCAL_REPOSITORY or options.revision is not None:
+                error.proposal = PROPOSAL_HEADER.encode("utf-8") + _hook_file(
+                    root, options
                 )
             raise
+        if foreign_launcher(root, entries):
+            raise SetupError("The first-commit hook declaration conflicts.")
+        if runs_installed_command(entries):
+            _require_installed_command(root)
     ignore = read_if_present(root / ".gitignore")
     if ignore is None:
         pending[root / ".gitignore"] = IGNORE_FILE

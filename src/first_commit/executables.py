@@ -38,20 +38,23 @@ def _repository_top(start: Path) -> Path | None:
     )
 
 
-# An absolute PATH entry inside the repository lets repository content choose the
-# program, as a relative entry would.
+def _inside(path: Path, top: Path) -> str | None:
+    return next(
+        (
+            path.relative_to(folder).as_posix()
+            for folder in (path, *path.parents)
+            if _same_folder(folder, top)
+        ),
+        None,
+    )
+
+
 def path_inside_repository(program: str, start: Path) -> str | None:
     top = _repository_top(start)
     if top is None:
         return None
-    resolved = Path(program).resolve()
-    return next(
-        (
-            resolved.relative_to(folder).as_posix()
-            for folder in (resolved, *resolved.parents)
-            if _same_folder(folder, top)
-        ),
-        None,
+    return _inside(Path(program).absolute(), top) or _inside(
+        Path(program).resolve(), top
     )
 
 

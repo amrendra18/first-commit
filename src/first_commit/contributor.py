@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import stat
 import string
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
@@ -111,7 +112,10 @@ def parse_contributor(raw: bytes) -> Contributor:
     )
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=duplicate)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+    except ContributorError:
+        raise
+    # ValueError also covers bad UTF-8, bad JSON, and a number over 4,300 digits.
+    except (ValueError, RecursionError) as error:
         raise ContributorError("Contributor record is not valid UTF-8 JSON.") from error
     if not isinstance(data, dict) or set(data) != RECORD_FIELDS:
         raise ContributorError("Contributor record has invalid fields.")
@@ -147,6 +151,16 @@ def _record_path(root: Path) -> Path:
         return confined_path(root, CONTRIBUTOR_PATH)
     except PathError as error:
         raise ContributorError("Contributor path is unsafe.") from error
+
+
+# When this clone was set up: the record's own time, as setup writes the record once.
+# A link is no record setup wrote, so it gives no time.
+def setup_time(root: Path) -> int | None:
+    try:
+        status = _record_path(root).lstat()
+    except (ContributorError, OSError):
+        return None
+    return int(status.st_mtime) if stat.S_ISREG(status.st_mode) else None
 
 
 def load_contributor(root: Path) -> Contributor | None:

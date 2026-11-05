@@ -8,16 +8,30 @@ from pathlib import Path
 from unittest import mock
 
 
+class FixtureGitError(subprocess.CalledProcessError):
+    def __str__(self) -> str:
+        return f"{super().__str__()}\n{self.stderr.decode(errors='replace')}"
+
+
 def run_git(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", "-C", str(root), *arguments],
-        check=True,
-        capture_output=True,
+    result = subprocess.run(
+        ["git", "-C", str(root), *arguments], capture_output=True, check=False
     )
+    if result.returncode != 0:
+        raise FixtureGitError(
+            result.returncode, result.args, result.stdout, result.stderr
+        )
+    return result
 
 
 def initialize_repository(root: Path) -> None:
     run_git(root, "init", "-q", "-b", "main")
+
+
+# Newer Git refuses `git remote add origin/x` next to `origin`, but a hand-edited or
+# older configuration can still hold such a remote.
+def configure_remote(root: Path, name: str, url: str) -> None:
+    run_git(root, "config", f"remote.{name}.url", url)
 
 
 def commit_message(subject: str) -> str:

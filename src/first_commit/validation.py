@@ -5,8 +5,11 @@ from pathlib import Path
 
 from first_commit.candidates import (
     CandidateError,
+    CandidateLimitError,
     LoadedCandidates,
     environment_files,
+    filtered_candidates,
+    filtered_staged_paths,
     head_candidate,
     index_candidate,
     staged_candidate_paths,
@@ -34,6 +37,7 @@ from first_commit.contributor import contributor_findings, load_contributor
 from first_commit.finding_collector import (
     FindingCollector,
     evaluate,
+    required_document_findings,
     split_forbidden,
     too_large_findings,
 )
@@ -56,8 +60,21 @@ from first_commit.gitleaks_scanner import (
 from first_commit.history_messages import MessageScope, history_message_findings
 from first_commit.hooks import hook_findings, push_check_findings
 from first_commit.message_scissors import message_secret_findings, split_message
-from first_commit.models import Candidate, Finding, Origin, Result
-from first_commit.paths import PathError, read_explicit_file_bytes, read_regular_bytes
+from first_commit.models import (
+    GIT_CONFIG_PATH,
+    Candidate,
+    Finding,
+    Origin,
+    Result,
+    Severity,
+    capped,
+)
+from first_commit.paths import (
+    PathError,
+    PathSizeError,
+    read_explicit_file_bytes,
+    read_regular_bytes,
+)
 from first_commit.policy import (
     MAX_POLICY_BYTES,
     POLICY_PATH,
@@ -66,7 +83,18 @@ from first_commit.policy import (
     parse_policy,
 )
 from first_commit.policy_fields import PolicyError
-from first_commit.pushed import PushedScope
+from first_commit.pushed import (
+    HISTORY_REVISIONS,
+    HistoryRange,
+    PushedScope,
+    new_revisions,
+)
+from first_commit.pushed_privacy import (
+    pushed_privacy_findings,
+    pushed_versions,
+    without_exceptions,
+)
+from first_commit.pushed_signatures import unsigned_commit_findings
 
 GENERATED_DOCUMENTS = (
     *(path for name in DOCUMENT_NAMES for path in (name, proposal_name(name))),
@@ -112,7 +140,8 @@ def working(root: Path, policy: Policy, private_values: Sequence[str] = ()) -> R
     )
     found.add(too_large_findings(loaded.oversized, max_findings=found.room))
     documents = _working_documents(root, policy, allowed)
-    evaluate(found, loaded, policy, documents, private_values)
+    found.add(required_document_findings(documents, loaded.oversized))
+    evaluate(found, loaded, policy, private_values)
     _add_environment_findings(found, root, policy)
     return found.result("working")
 
@@ -140,15 +169,7 @@ def _staged_policy(root: Path, policy: Policy) -> Policy:
         else head_candidate(root, POLICY_PATH, MAX_POLICY_BYTES)
     )
     if staged_file is None:
-        return replace(
-            policy,
-            environment_exceptions=(),
-            literal_exceptions=(),
-            detector_exceptions=(),
-            public_emails=(),
-            immutable_vendor_files=(),
-            public_github_owner_urls=False,
-        )
+        return without_exceptions(policy)
     if not staged_file.regular_file:
         raise PolicyError(
             f"The {label} {POLICY_PATH} is a link; stage the file itself."
@@ -160,10 +181,30 @@ def _staged_policy(root: Path, policy: Policy) -> Policy:
     return replace(parsed, contributor_emails=policy.contributor_emails)
 
 
+WHOLE_HISTORY = Finding(
+    rule_id="history.whole-history",
+    path=GIT_CONFIG_PATH,
+    summary=(
+        "The remote list is too long to leave out the commits remotes hold, so "
+        "--new-only checked the whole history."
+    ),
+    severity=Severity.WARNING,
+)
 EMPTY_INDEX = Finding(
     rule_id="git.empty-index",
     path="<index>",
     summary="Staged snapshot is empty; stage the required documents before validation.",
+)
+MESSAGE_TOO_LARGE = "Commit message exceeds the size limit."
+FILTERED_TOO_LARGE_RULE = "files.filtered-too-large"
+FILTERED_TOO_LARGE_SUMMARY = (
+    "File is under a Git clean filter and its working copy is over the size limit, "
+    "so its content was not checked."
+)
+FILTERED_UNREADABLE_RULE = "files.filtered-unreadable"
+FILTERED_UNREADABLE_SUMMARY = (
+    "File is under a Git clean filter, and its working copy is missing or is not a "
+    "regular file, so its content was not checked."
 )
 
 
@@ -186,14 +227,54 @@ def _unseen(found: FindingCollector, findings: Iterable[Finding]) -> Iterator[Fi
             yield finding
 
 
-# Asks each document for cap findings: _unseen drops at most what found holds.
 def _add_generated_no_commit_findings(
     found: FindingCollector, generated: LoadedCandidates
 ) -> None:
     for candidate in generated:
         if found.full():
             break
-        found.add(_unseen(found, no_commit_findings(candidate, max_findings=found.cap)))
+        found.add(
+            _unseen(found, no_commit_findings(candidate, max_findings=found.cap + 1))
+        )
+
+
+def _large_copy_findings(paths: Sequence[str], *, max_findings: int) -> list[Finding]:
+    findings = (
+        Finding(
+            rule_id=FILTERED_TOO_LARGE_RULE,
+            path=path,
+            summary=FILTERED_TOO_LARGE_SUMMARY,
+            severity=Severity.WARNING,
+        )
+        for path in paths
+    )
+    return capped(findings, max_findings)
+
+
+def _unreadable_copy_findings(
+    paths: Sequence[str], *, max_findings: int
+) -> list[Finding]:
+    findings = (
+        Finding(
+            rule_id=FILTERED_UNREADABLE_RULE,
+            path=path,
+            summary=FILTERED_UNREADABLE_SUMMARY,
+        )
+        for path in paths
+    )
+    return capped(findings, max_findings)
+
+
+def _add_filtered_copy_findings(
+    found: FindingCollector,
+    copies: LoadedCandidates,
+    policy: Policy,
+    private_values: Sequence[str],
+) -> None:
+    copy_found = FindingCollector(found.cap)
+    evaluate(copy_found, copies, policy, private_values)
+    copies_found = copy_found.result("staged")
+    found.add(_unseen(found, copies_found.findings), not_shown=copies_found.not_shown)
 
 
 def staged(root: Path, policy: Policy, private_values: Sequence[str] = ()) -> Result:
@@ -210,7 +291,12 @@ def staged(root: Path, policy: Policy, private_values: Sequence[str] = ()) -> Re
     loaded = staged_candidates(
         root, policy.max_files, policy.max_file_bytes, paths=allowed
     )
+    filtered = filtered_candidates(
+        root, filtered_staged_paths(root, allowed), policy.max_file_bytes
+    )
     found.add(too_large_findings(loaded.oversized, max_findings=found.room))
+    found.add(_large_copy_findings(filtered.loaded.oversized, max_findings=found.room))
+    found.add(_unreadable_copy_findings(filtered.unreadable, max_findings=found.room))
     # A too-large generated document is reported before the content findings,
     # so a full finding budget keeps it. Every path is listed before the repeats
     # are dropped, so a repeat never takes the room of a new path.
@@ -224,18 +310,24 @@ def staged(root: Path, policy: Policy, private_values: Sequence[str] = ()) -> Re
         )
     )
     # An empty index reports EMPTY_INDEX in place of each missing document.
-    documents = None if index_empty else _index_documents(root, policy, excluded)
-    evaluate(found, loaded, policy, documents, private_values)
+    if not index_empty:
+        documents = _index_documents(root, policy, excluded)
+        found.add(required_document_findings(documents, loaded.oversized))
+    evaluate(found, loaded, policy, private_values)
+    _add_filtered_copy_findings(found, filtered.loaded, policy, private_values)
     _add_environment_findings(found, root, policy)
     _add_generated_no_commit_findings(found, generated)
     if not excluded:
         found.add(scan_staged(root, max_findings=found.room))
         found.add(
-            scan_hidden_staged(
-                root,
-                allowed,
-                (policy.max_files, policy.max_file_bytes),
-                max_findings=found.room,
+            _unseen(
+                found,
+                scan_hidden_staged(
+                    root,
+                    allowed,
+                    (policy.max_files, policy.max_file_bytes),
+                    max_findings=found.room,
+                ),
             )
         )
     return found.result("staged")
@@ -250,6 +342,8 @@ def _git_managed(message_path: Path, expected: Path) -> Path:
 def _commit_message_bytes(root: Path, policy: Policy, message_path: Path) -> bytes:
     try:
         content = read_explicit_file_bytes(root, message_path, policy.max_message_bytes)
+    except PathSizeError as error:
+        raise CandidateLimitError(MESSAGE_TOO_LARGE) from error
     except PathError:
         try:
             expected = git_path(
@@ -258,6 +352,8 @@ def _commit_message_bytes(root: Path, policy: Policy, message_path: Path) -> byt
             content = read_regular_bytes(
                 _git_managed(message_path, expected), policy.max_message_bytes
             )
+        except PathSizeError as error:
+            raise CandidateLimitError(MESSAGE_TOO_LARGE) from error
         except (GitError, PathError) as error:
             raise CandidateError("Commit message cannot be read.") from error
     try:
@@ -314,21 +410,51 @@ def message(
 def history(
     root: Path,
     policy: Policy,
-    scope: PushedScope | None = None,
+    scope: PushedScope | HistoryRange | None = None,
     private_values: Sequence[str] = (),
     *,
     warn_on_remote: bool = False,
 ) -> Result:
     found = FindingCollector(policy.max_findings)
-    found.add(
-        scan_history(root, max_findings=found.room)
-        if scope is None
-        else scan_pushed(root, scope, max_findings=found.room)
-    )
-    messages = MessageScope(scope, warn_on_remote=warn_on_remote)
+    if isinstance(scope, PushedScope):
+        found.add(scan_pushed(root, scope, max_findings=found.room))
+        messages = MessageScope(scope, warn_on_remote)
+    else:
+        revisions = HISTORY_REVISIONS if scope is None else new_revisions(root)
+        if revisions is None:
+            found.add((WHOLE_HISTORY,))
+            revisions = HISTORY_REVISIONS
+        found.add(scan_history(root, max_findings=found.room, revisions=revisions))
+        messages = MessageScope(None, warn_on_remote, revisions)
     found.add(
         history_message_findings(
             root, policy, private_values, messages, max_findings=found.room
+        )
+    )
+    return found.result("history")
+
+
+def pushed_history(
+    root: Path,
+    policy: Policy,
+    scope: PushedScope | None,
+    private_values: Sequence[str] = (),
+) -> Result:
+    versions = pushed_versions(root, scope, policy.max_files)
+    found = FindingCollector(policy.max_findings)
+    whole = history(root, policy, scope, private_values)
+    found.add(whole.findings, not_shown=whole.not_shown)
+    found.add(
+        pushed_privacy_findings(
+            root, policy, versions, private_values, max_findings=found.room
+        )
+    )
+    found.add(
+        unsigned_commit_findings(
+            root,
+            scope,
+            max_bytes=policy.max_message_bytes,
+            max_findings=found.room,
         )
     )
     return found.result("history")

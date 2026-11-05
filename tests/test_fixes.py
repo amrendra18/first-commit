@@ -6,12 +6,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from first_commit.checks.identity import SIGNATURE_TRUST_SUMMARY
+from first_commit.checks.messages import PLACEHOLDERS
 from first_commit.checks.templates import template_findings
 from first_commit.contributor import contributor_findings
 from first_commit.fixes import (
     HOOK_FIXES,
     MESSAGE_FIXES,
     PUSHED_MESSAGE_FIX,
+    SETUP_NAMING_RULES,
     SETUP_RULES,
     TAG_MESSAGE_FIX,
     TOOL_FIXES,
@@ -27,8 +29,8 @@ from tests.validation_support import render_json
 
 SOURCE = Path(__file__).resolve().parents[1] / "src/first_commit"
 RULE = re.compile(
-    r'"((?:documents|environment|files|git|hooks|message|privacy|scaffold|secrets|'
-    r'template|text)\.[a-z0-9-]+)"'
+    r'"((?:documents|environment|files|git|history|hooks|message|privacy|scaffold|'
+    r'secrets|template|text)\.[a-z0-9-]+)"'
 )
 NOT_RULES: set[str] = set()
 APPROVAL_FIELDS = (
@@ -146,6 +148,24 @@ class FixesTest(unittest.TestCase):
             "or install first-commit at the pinned rev.",
             HOOK_FIXES["hooks.push-revision"],
         )
+
+    def test_the_missing_signers_file_fix_runs_trust_without_an_unset(self) -> None:
+        for fixes, trust in (
+            (HOOK_FIXES, f"FIRST_COMMIT_TRUST_SELF=1 {SETUP_HOOK_COMMAND}"),
+            (TOOL_FIXES, f"{TOOL_SETUP_COMMAND} --trust-self"),
+        ):
+            fix = fixes["git.allowed-signers-file"]
+            with self.subTest(trust=trust):
+                self.assertTrue(fix.startswith(f"Run {trust} to write "), fix)
+                self.assertNotIn("--unset", fix)
+
+    def test_the_sections_fix_names_each_template_placeholder(self) -> None:
+        for fixes in (HOOK_FIXES, TOOL_FIXES):
+            fix = fixes["message.sections"]
+            self.assertIn("replace", fix)
+            for placeholder in PLACEHOLDERS:
+                with self.subTest(placeholder=placeholder):
+                    self.assertIn(placeholder, fix)
 
     def test_the_scanner_fix_line_names_setup_or_a_gitleaks_install(self) -> None:
         action = (
@@ -271,6 +291,52 @@ class FixesTest(unittest.TestCase):
             with self.subTest(setup_hook=fixes is HOOK_FIXES):
                 self.assertEqual(expected, fixes["git.empty-index"])
 
+    def test_a_document_proposal_fix_says_to_merge_then_delete_it(self) -> None:
+        finding = Finding(
+            rule_id="scaffold.no-commit",
+            path="README.md.first-commit-proposal.md",
+            summary="Generated section must be reviewed or removed before committing.",
+            line=4,
+        )
+        expected = "Merge this proposal into README.md, then delete the proposal."
+        self.assertEqual(expected, fix_for(finding))
+        self.assertEqual(expected, fix_for(finding, setup_hook=False))
+        document = replace(finding, path="README.md")
+        self.assertEqual(HOOK_FIXES["scaffold.no-commit"], fix_for(document))
+
+    def test_a_pushed_file_approval_goes_in_the_policy_of_that_commit(self) -> None:
+        for rule in APPROVAL_RULES[1:]:
+            with self.subTest(rule=rule):
+                finding = Finding(
+                    rule_id=rule,
+                    path="notes.txt",
+                    summary="Something.",
+                    line=1,
+                    commit="abc1234",
+                )
+                fix = str(fix_for(finding))
+                self.assertNotIn("stage", fix)
+                self.assertIn("in the .repo-policy.json of commit abc1234", fix)
+                self.assertIn("Make the change in commit abc1234 itself", fix)
+
+    def test_only_a_push_finding_in_a_commit_says_to_fetch_first(self) -> None:
+        fetch = (
+            "When the remote already holds commit abc1234, run git fetch <remote>, "
+            "then push again."
+        )
+        for rule in (
+            "git.unsigned-commit",
+            "privacy.private-literal",
+            "files.too-large",
+            "secrets.gitleaks",
+        ):
+            with self.subTest(rule=rule):
+                finding = Finding(
+                    rule_id=rule, path="a.txt", summary="Something.", commit="abc1234"
+                )
+                self.assertNotIn("git fetch", str(fix_for(finding)))
+                self.assertIn(fetch, str(fix_for(replace(finding, pushed=True))))
+
     def test_an_unknown_rule_prints_no_fix_line(self) -> None:
         finding = Finding(
             rule_id="other.rule",
@@ -281,6 +347,26 @@ class FixesTest(unittest.TestCase):
         self.assertNotIn("fix:", render_human(Result("staged", (finding,))))
         value = json.loads(render_json(Result("staged", (finding,))))
         self.assertNotIn("fix", value["findings"][0])
+
+    def test_in_a_linked_worktree_setup_fixes_name_the_main_worktree(self) -> None:
+        main = "/work/main"
+        expected = (
+            "Linked worktrees are not supported, and setup refuses to run in one; "
+            "commit from the main worktree at /work/main."
+        )
+        naming = {
+            rule for rule in HOOK_FIXES if HOOK_FIXES[rule] != TOOL_FIXES[rule]
+        } - {"hooks.push-revision"}
+        self.assertEqual(naming, set(SETUP_NAMING_RULES))
+        for rule in HOOK_FIXES:
+            finding = Finding(rule_id=rule, path="a.txt", summary="Something.")
+            for setup_hook in (True, False):
+                with self.subTest(rule=rule, setup_hook=setup_hook):
+                    fix = fix_for(finding, setup_hook=setup_hook, main_worktree=main)
+                    if rule in SETUP_NAMING_RULES:
+                        self.assertEqual(expected, fix)
+                    else:
+                        self.assertEqual(fix_for(finding, setup_hook=setup_hook), fix)
 
 
 if __name__ == "__main__":

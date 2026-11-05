@@ -20,11 +20,24 @@ LOCK_FILE = ".git/first-commit-setup.lock"
 REMOVED_FILES = (".local/first-commit", ".local/bin/gitleaks")
 HOOK_STAGES = ("pre-commit", "commit-msg", "pre-push")
 PLAIN_IDENTITY = ("-c", "user.name=Plain", "-c", "user.email=plain@example.com")
+HOOK_FILE = ".pre-commit-config.yaml"
+DEFAULT_TYPES = "default_install_hook_types:\n"
 
 
 def readme_remove_block() -> str:
     section = (PROJECT / "README.md").read_text("utf-8").split(REMOVE_HEADING, 1)[1]
     return section.split("```sh\n", 1)[1].split("```", 1)[0]
+
+
+def _drop_default_hook_types(target: Path) -> bool:
+    path = target / HOOK_FILE
+    lines = path.read_text("utf-8").splitlines(keepends=True)
+    start = lines.index(DEFAULT_TYPES)
+    end = start + 1
+    while end < len(lines) and lines[end].startswith("  - "):
+        end += 1
+    path.write_text("".join(lines[:start] + lines[end:]), "utf-8")
+    return DEFAULT_TYPES not in path.read_text("utf-8")
 
 
 def _local_settings(run: Run, target: Path) -> str:
@@ -71,6 +84,7 @@ def feature_remove(run: Run) -> list[str]:
         setup_hook(run, target, identity)[0], 0, "clone setup with self-trust"
     )
     hooked = _commit_after_setup(run, target)
+    dropped = _drop_default_hook_types(target)
     removed, _ = run.command(
         ["/bin/sh", "-c", readme_remove_block()],
         target,
@@ -82,6 +96,10 @@ def feature_remove(run: Run) -> list[str]:
     return [
         set_up,
         *hooked,
+        require(
+            condition=dropped,
+            observed=f"{HOOK_FILE} no longer names default_install_hook_types",
+        ),
         exited(removed, 0, "the README Remove block, run as printed,"),
         require(
             condition=after == before,

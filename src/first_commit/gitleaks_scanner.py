@@ -11,6 +11,7 @@ from typing import NamedTuple
 
 from first_commit.executables import find_executable, path_inside_repository
 from first_commit.git import GitError, is_tracked, sanitized_git_environment
+from first_commit.models import LimitExceededError
 from first_commit.paths import MEBIBYTE
 from first_commit.setup_command import declares_setup_hook, setup_command
 
@@ -23,7 +24,7 @@ class DependencyError(RuntimeError):
         self.reason = reason or message.removesuffix(".")
 
 
-class ScannerTimeoutError(DependencyError):
+class ScannerTimeoutError(DependencyError, LimitExceededError):
     pass
 
 
@@ -192,6 +193,7 @@ def run_scanner(
             cwd=str(root if folder is None else folder),
             env=_environment(environment, root),
             input=input_bytes,
+            stdin=subprocess.DEVNULL if input_bytes is None else None,
             stdout=subprocess.PIPE if capture_output else subprocess.DEVNULL,
             stderr=subprocess.PIPE if capture_output else subprocess.DEVNULL,
             check=False,

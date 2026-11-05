@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from first_commit import cli
-from first_commit.git import GIT_STATUS_FIX, GitError, run_git
+from first_commit.git import GitError, run_git
+from first_commit.models import LimitExceededError
 from tests.support import initialize_repository
 from tests.support import run_git as fixture_git
 
@@ -41,9 +42,11 @@ class GitFailureMessageTest(unittest.TestCase):
             with self.assertRaises(GitError) as context:
                 run_git(Path(), ("status",))
         self.assertEqual(
-            "Git command `git status` timed out after 120 seconds.\n" + GIT_STATUS_FIX,
+            "Git command `git status` timed out after 120 seconds.\n"
+            "fix: check that `git status` answers in this repository, then rerun.",
             str(context.exception),
         )
+        self.assertIsInstance(context.exception, LimitExceededError)
 
 
 def run_check(root: Path) -> tuple[int, str, str]:
@@ -66,7 +69,7 @@ class CheckGitErrorTest(unittest.TestCase):
             "fix: run first-commit in a Git checkout, or run `first-commit setup` to "
             "create one; `git status` in that folder shows Git's own error.\n"
         )
-        self.assertEqual((4, "", expected), run_check(self.root))
+        self.assertEqual((1, "", expected), run_check(self.root))
 
     def test_a_corrupt_index_names_the_git_subcommand_and_a_fix(self) -> None:
         initialize_repository(self.root)
@@ -77,7 +80,7 @@ class CheckGitErrorTest(unittest.TestCase):
         fixture_git(self.root, "add", "--", "README.md")
         (self.root / ".git/index").write_bytes(b"DIRC corrupt")
         code, output, error = run_check(self.root)
-        self.assertEqual((4, ""), (code, output))
+        self.assertEqual((1, ""), (code, output))
         self.assertRegex(error, GIT_FAILURE)
 
 

@@ -1,9 +1,15 @@
+import contextlib
+import io
+import json
 import os
+import shlex
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
+from first_commit import cli
 from first_commit.contributor import Contributor
 from first_commit.machine_identity import create_identity
 from tests.cli_support import PROJECT, RECORD, CliFixture, PatchedSetupFixture
@@ -16,6 +22,7 @@ VARIABLES = {
     "FIRST_COMMIT_SIGNING_KEY": "var.pub",
 }
 APPLY_PROMPT = "Apply this setup? [y/N] "
+COMMAND = "/opt/first-commit/bin/first-commit"
 
 
 class SetupConfirmationTest(PatchedSetupFixture):
@@ -25,8 +32,9 @@ class SetupConfirmationTest(PatchedSetupFixture):
     def test_no_terminal_refuses_a_saved_identity_without_yes(self) -> None:
         create_identity(self.identity, FILE_PERSON)
         code, output, error = self.run_cli("setup", "--revision", "1" * 40)
-        self.assertEqual(2, code)
+        self.assertEqual(5, code)
         self.assertFalse(self.applied())
+        self.assertIn("\nfix: check the plan above, then rerun with --yes", error)
         for detail in ("did not apply", "no terminal", str(self.identity), "--yes"):
             self.assertIn(detail, error)
         self.assertIn("Identity: File Person <file@example.net>", output)
@@ -34,10 +42,66 @@ class SetupConfirmationTest(PatchedSetupFixture):
     def test_no_terminal_refuses_variables_without_yes(self) -> None:
         with patch.dict(os.environ, VARIABLES):
             code, _, error = self.run_cli("setup", "--revision", "1" * 40)
-        self.assertEqual(2, code)
+        self.assertEqual(5, code)
         self.assertFalse(self.applied())
         self.assertIn("FIRST_COMMIT_AUTHOR_NAME", error)
         self.assertFalse(self.identity.exists())
+
+    def test_json_mode_holds_the_yes_call_as_next(self) -> None:
+        create_identity(self.identity, FILE_PERSON)
+        with patch.dict(os.environ, {cli.EXECUTABLE_VARIABLE: COMMAND}):
+            code, output, error = self.run_cli(
+                "setup", "--revision", "1" * 40, "--format", "json"
+            )
+        self.assertEqual(5, code)
+        self.assertFalse(self.applied())
+        value = json.loads(output)["error"]
+        self.assertEqual("needs-confirmation", value["code"])
+        call = (COMMAND, "setup", "--revision", "1" * 40, "--format", "json")
+        root = str(self.root.resolve())
+        self.assertEqual([shlex.join((*call, "--root", root, "--yes"))], value["next"])
+        self.assertNotIn("fix:", value["message"])
+        self.assertIn("Identity: File Person <file@example.net>", error)
+
+    def test_the_yes_call_replaces_a_relative_root_with_the_absolute_one(self) -> None:
+        create_identity(self.identity, FILE_PERSON)
+        output = io.StringIO()
+        with (
+            patch.dict(os.environ, {cli.EXECUTABLE_VARIABLE: COMMAND}),
+            contextlib.chdir(self.root),
+            redirect_stdout(output),
+            redirect_stderr(io.StringIO()),
+        ):
+            code = cli.main(("setup", "--root=.", "--format", "json", "--root", "."))
+        self.assertEqual(5, code)
+        command = shlex.split(json.loads(output.getvalue())["error"]["next"][0])
+        root = str(self.root.resolve())
+        self.assertEqual(
+            [COMMAND, "setup", "--format", "json", "--root", root, "--yes"], command
+        )
+
+    def test_no_identity_and_no_terminal_is_still_a_setup_input_error(self) -> None:
+        code, output, _ = self.run_cli(
+            "setup", "--revision", "1" * 40, "--format", "json"
+        )
+        self.assertEqual(
+            (2, "setup-input"), (code, json.loads(output)["error"]["code"])
+        )
+        self.assertFalse(self.applied())
+
+    def test_a_typed_no_cancels_with_exit_one(self) -> None:
+        create_identity(self.identity, FILE_PERSON)
+        self.stdin.isatty.return_value = True
+        with patch("builtins.input", side_effect=["n"]):
+            code, output, error = self.run_cli(
+                "setup", "--revision", "1" * 40, "--format", "json"
+            )
+        self.assertEqual((1, "cancelled"), (code, json.loads(output)["error"]["code"]))
+        self.assertFalse(self.applied())
+        with patch("builtins.input", side_effect=["n"]):
+            code, output, error = self.run_cli("setup", "--revision", "1" * 40)
+        self.assertEqual(1, code)
+        self.assertIn("error: Setup was cancelled; no changes made.", error)
 
     def test_yes_applies_a_saved_identity_without_a_terminal(self) -> None:
         create_identity(self.identity, FILE_PERSON)
@@ -136,7 +200,7 @@ class CombinedOutputTest(CliFixture):
             check=False,
         )
         log = result.stdout
-        self.assertEqual(2, result.returncode, log)
+        self.assertEqual(5, result.returncode, log)
         self.assertLess(
             log.index("Identity: Variable Person"),
             log.index("error: Setup did not apply the plan"),

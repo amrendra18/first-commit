@@ -12,6 +12,16 @@ lines=$(cat)
 printf 'call %s %s\\n%s\\n' "$1" "$2" "$lines" >> "$0.log"
 case "$lines" in
   *refs/heads/second*) echo 'secrets.gitleaks "second-secret.txt"'; exit 1 ;;
+  "refs/heads/main "*" {"0" * 40}") ;;
+  "refs/heads/main "*)
+    pushed=$(echo "$lines" | cut -d ' ' -f 2)
+    if [ "$(git log -1 --format=%ct "$pushed")" -lt 1000000000 ]; then
+      echo '{core.PUSH_HOOK}.....Passed'
+      exit 0
+    fi
+    commit=$(echo "$pushed" | cut -c 1-12)
+    echo 'git.unsigned-commit ".git": Commit '"$commit"' has no signature.'
+    exit 1 ;;
 esac
 echo '{core.PUSH_HOOK}.....Passed'
 """
@@ -61,14 +71,21 @@ class VerifyPushTest(unittest.TestCase):
     def test_git_push_runs_the_hook_for_main_and_for_both_new_branches(self) -> None:
         observed = push_journey.feature_push(self.run_state)
 
-        head = _git(self.project, "rev-parse", "HEAD")
+        head = _git(self.project, "rev-parse", "HEAD^")
+        older = _git(self.project, "rev-parse", "HEAD")
         remote = self.work / "remote.git"
         calls = self.hook.with_name("pre-push.log").read_text("utf-8").split("call ")
-        self.assertEqual(3, len(calls))
-        first, second = (call.splitlines() for call in calls[1:])
+        self.assertEqual(5, len(calls))
+        first, unsigned, pushed_older, second = (
+            call.splitlines() for call in calls[1:]
+        )
         self.assertEqual(f"origin {remote}", first[0])
         self.assertEqual(
             [f"refs/heads/main {head} refs/heads/main {'0' * 40}"], first[1:]
+        )
+        self.assertEqual(["refs/heads/main", head], unsigned[1].split()[2:])
+        self.assertEqual(
+            [f"refs/heads/main {older} refs/heads/main {head}"], pushed_older[1:]
         )
         self.assertEqual(f"origin {remote}", second[0])
         self.assertEqual(
@@ -81,6 +98,11 @@ class VerifyPushTest(unittest.TestCase):
                 "git push of main to a local bare remote exited 0",
                 f"Git ran the pre-push hook, which printed '{core.PUSH_HOOK}' Passed",
                 "the bare remote holds main",
+                "git push of main with a commit made with --no-gpg-sign exited 1",
+                "git.unsigned-commit named the unsigned commit's short id",
+                "the bare remote's main stayed at the last signed commit",
+                "git push of main with an unsigned commit older than the setup exited 0",
+                "the bare remote's main is the older unsigned commit",
                 (
                     "git push of two new branches: first (clean), then second (a "
                     "commit holding a token) exited 1"

@@ -2,6 +2,7 @@ import hashlib
 import json
 import unittest
 
+from first_commit.checks.privacy import PrivacyPolicy, privacy_findings
 from first_commit.models import Candidate, Origin
 from first_commit.policy import REQUIRED_DOCUMENTS, parse_policy
 from first_commit.policy_fields import PolicyError
@@ -166,6 +167,58 @@ class PolicyExceptionsTest(TemporaryRootTest):
         ]
         with self.assertRaisesRegex(PolicyError, "count"):
             parse_policy(json.dumps(value).encode(), self.root)
+
+
+class GithubOwnerSegmentTest(unittest.TestCase):
+    def literal_lines(
+        self, content: bytes, value: str = "privateowner"
+    ) -> list[int | None]:
+        findings = privacy_findings(
+            Candidate("README.md", content, Origin.WORKTREE),
+            PrivacyPolicy(private_values=(value,), public_github_owner_urls=True),
+            max_findings=1000,
+        )
+        self.assertNotIn(value, repr(findings))
+        return [f.line for f in findings if f.rule_id == "privacy.private-literal"]
+
+    def test_a_value_anywhere_inside_the_owner_segment_is_exempt(self) -> None:
+        for content in (
+            b"https://github.com/" + b"x" * 27 + b"privateowner/tool\n",
+            b"https://github.com/privateowner-labs/tool\n",
+            b"https://github.com/the-privateowner/tool.git\n",
+            b"git clone git" + b"@" + b"github.com:xPrivateOwner2/tool.git\n",
+            b"ssh://git@github.com/a-privateowner-b/tool\n",
+        ):
+            with self.subTest(content=content):
+                self.assertEqual([], self.literal_lines(content))
+
+    def test_a_value_outside_the_owner_segment_is_still_private(self) -> None:
+        longest = b"x" * 28
+        for content in (
+            b"https://github.com/someone/privateowner-tool\n",
+            b"https://github.com/privateowner-labs\n",
+            b"https://github.com/privateowner.labs/tool\n",
+            b"https://example.com/privateowner-labs/tool\n",
+            b"https://github.com/" + longest + b"privateowner/tool\n",
+            b"https://github.com/privateowner" + longest + b"/tool\n",
+            b"https://github.com/abc\nprivateowner/tool\n",
+            b"https://github.com/\nprivateowner/tool\n",
+        ):
+            with self.subTest(content=content):
+                self.assertEqual([content.count(b"\n")], self.literal_lines(content))
+
+    def test_an_owner_segment_github_would_refuse_is_still_private(self) -> None:
+        for value, content in (
+            ("private.owner", b"https://github.com/private.owner/tool\n"),
+            ("private owner", b"https://github.com/private owner/tool\n"),
+            ("privateowner/tool", b"https://github.com/privateowner/tool/blob/x\n"),
+            (
+                "private\u00f6wner",
+                "https://github.com/private\u00f6wner-labs/tool\n".encode(),
+            ),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual([1], self.literal_lines(content, value))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,18 @@
 import hashlib
 import os
+import shlex
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
-from first_commit.git import GitError, cat_file_blobs, parse_batch_check, run_git
+from first_commit.candidates import filtered_staged_paths
+from first_commit.git import (
+    GitError,
+    batch_check,
+    cat_file_blobs,
+    listed_commits,
+    run_git,
+)
 from first_commit.gitleaks_ignore_format import (
     IGNORE_PATH,
     MAX_IGNORE_BYTES,
@@ -14,16 +22,18 @@ from first_commit.gitleaks_ignore_format import (
     ignore_file_error,
     parse_ignore,
 )
-from first_commit.paths import MEBIBYTE, PathError, read_regular_bytes
+from first_commit.paths import MEBIBYTE, PathError, confined_path, read_regular_bytes
 
 MAX_SOURCE_BYTES = 10 * MEBIBYTE
 MAX_SOURCES = 10000
 MAX_TOTAL_SOURCE_BYTES = 256 * MEBIBYTE
+LFS_POINTER = b"version https://git-lfs.github.com/spec/v1\n"
 
 
 class _BlobDigest(NamedTuple):
     lines: int
     sha256: str
+    lfs_pointer: bool
 
 
 def _staged_ignore(root: Path) -> bytes | None:
@@ -42,14 +52,7 @@ def _staged_ignore(root: Path) -> bytes | None:
 def _blob_ids_and_sizes(
     root: Path, names: Sequence[str]
 ) -> dict[str, tuple[str, int] | None]:
-    if not names:
-        return {}
-    raw = run_git(
-        root,
-        ("cat-file", "--batch-check"),
-        "".join(name + "\n" for name in names).encode("utf-8"),
-    )
-    answers = parse_batch_check(raw, len(names))
+    answers = batch_check(root, names)
     return {
         name: (found.object_id, found.size)
         if found is not None and found.kind == "blob"
@@ -61,11 +64,7 @@ def _blob_ids_and_sizes(
 def _changing_commits(
     root: Path, revisions: Sequence[str], path: str
 ) -> tuple[str, ...]:
-    raw = run_git(
-        root,
-        ("--literal-pathspecs", "rev-list", "--full-history", *revisions, "--", path),
-    )
-    return tuple(raw.decode("ascii").split())
+    return tuple(listed_commits(root, ("--full-history", *revisions, "--", path)))
 
 
 class _DigestCheck(NamedTuple):
@@ -101,11 +100,30 @@ def _digests(root: Path, sizes: dict[str, int]) -> dict[str, _BlobDigest]:
             "of file versions read",
             "remove exceptions for large or often-changed files.",
         )
+    return {
+        object_id: _digest_of(content)
+        for object_id, content in cat_file_blobs(root, sizes)
+    }
+
+
+def _digest_of(content: bytes) -> _BlobDigest:
+    lines = content.count(b"\n") + (bool(content) and not content.endswith(b"\n"))
+    return _BlobDigest(
+        lines, hashlib.sha256(content).hexdigest(), content.startswith(LFS_POINTER)
+    )
+
+
+def _working_digests(
+    root: Path, checks: Sequence[_DigestCheck]
+) -> dict[str, _BlobDigest]:
+    staged = list(dict.fromkeys(c.entry.path for c in checks if c.commit is None))
     digests = {}
-    for object_id, content in cat_file_blobs(root, sizes):
-        # The text after a final newline is not a line.
-        lines = content.count(b"\n") + (bool(content) and not content.endswith(b"\n"))
-        digests[object_id] = _BlobDigest(lines, hashlib.sha256(content).hexdigest())
+    for path in filtered_staged_paths(root, staged) if staged else ():
+        try:
+            content = read_regular_bytes(confined_path(root, path), MAX_SOURCE_BYTES)
+        except PathError:
+            continue
+        digests[path] = _digest_of(content)
     return digests
 
 
@@ -141,9 +159,8 @@ def _too_large(check: _DigestCheck) -> IgnoreFileError:
     )
 
 
-def _mismatch(check: _DigestCheck) -> IgnoreFileError:
+def _mismatch(check: _DigestCheck, command: str) -> IgnoreFileError:
     entry = check.entry
-    command = digest_command(check.source)
     if check.commit is None:
         return ignore_file_error(
             f"{entry.path} in {_where(entry, check.commit)} no longer matches its file-sha256, so "
@@ -181,17 +198,26 @@ def _check_digests(
         if found is not None and found[1] > MAX_SOURCE_BYTES:
             raise _too_large(check)
     digests = _digests(root, dict(item for item in resolved.values() if item))
+    working = _working_digests(root, checks)
     for check in checks:
         found = resolved[check.source]
         if found is None:
             continue
-        blob = digests[found[0]]
-        if check.entry.line > blob.lines:
-            if check.commit is None:
-                raise _past_end(check.entry)
-            continue
-        if blob.sha256 != check.entry.sha256:
-            raise _mismatch(check)
+        stored = digests[found[0]]
+        if not (stored.lfs_pointer and check.entry.path in working):
+            _verify(check, stored, digest_command(check.source))
+        elif check.commit is None:
+            path = shlex.quote("./" + check.entry.path)
+            _verify(check, working[check.entry.path], f"shasum -a 256 {path}")
+
+
+def _verify(check: _DigestCheck, blob: _BlobDigest, command: str) -> None:
+    if check.entry.line > blob.lines:
+        if check.commit is None:
+            raise _past_end(check.entry)
+        return
+    if blob.sha256 != check.entry.sha256:
+        raise _mismatch(check, command)
 
 
 def check_ignore_file(

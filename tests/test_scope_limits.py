@@ -173,7 +173,7 @@ class ScopeLimitsTest(CliFixture):
                     load()
                 self.assertEqual(expected, str(context.exception))
             code, _, error = self.run_cli("check")
-        self.assertEqual(4, code)
+        self.assertEqual(1, code)
         self.assertIn(expected, error)
 
     def test_staged_blobs_are_read_by_two_git_processes(self) -> None:

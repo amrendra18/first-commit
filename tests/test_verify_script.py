@@ -332,7 +332,12 @@ class VerifyScriptTest(unittest.TestCase):
 
     def test_remove_runs_the_readme_remove_block_as_printed(self) -> None:
         block = harness("remove_journey").readme_remove_block()
-        self.assertTrue(block.startswith("pre-commit uninstall\n"), block)
+        self.assertTrue(
+            block.startswith(
+                "pre-commit uninstall -t pre-commit -t commit-msg -t pre-push\n"
+            ),
+            block,
+        )
         self.assertIn('  git config --local --unset-all "$key"\n', block)
         self.assertTrue(
             block.endswith("rm -rf .local/first-commit .local/bin/gitleaks\n"), block
@@ -396,6 +401,68 @@ class VerifyScriptTest(unittest.TestCase):
                     (heading.removeprefix("# "), feature.level, feature.needs),
                     table[name],
                 )
+
+
+class ScratchHomeTest(unittest.TestCase):
+    def test_the_scratch_home_names_the_default_branch_the_journeys_push(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = prepare.prepare_run("python3", Path(directory), ("/usr/bin", []))
+            project = Path(directory) / "project"
+            environment = {**run.environment, "GIT_CONFIG_NOSYSTEM": "1"}
+            subprocess.run(
+                ["git", "init", "-q", str(project)], env=environment, check=True
+            )
+            found = subprocess.run(
+                ["git", "-C", str(project), "symbolic-ref", "--short", "HEAD"],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual("main", found.stdout.strip())
+
+
+class FailedFeatureOutputTest(unittest.TestCase):
+    def run_failing(self, log: list[str]) -> str:
+        def fail(run: object) -> list[str]:
+            del run
+            raise core.FeatureFailedError("step exited 1")
+
+        with tempfile.TemporaryDirectory() as directory:
+            run = core.Run(work=Path(directory), python="python3", environment={})
+            run.log.extend(
+                entry.format(work=run.work, home=Path.home()) for entry in log
+            )
+            output = io.StringIO()
+            with (
+                patch.dict(cli.RUNNERS, {"probe": fail}),
+                redirect_stdout(output),
+            ):
+                cli.run_feature(run, "probe", require_github=False)
+        return output.getvalue()
+
+    def test_a_failed_feature_prints_its_last_commands(self) -> None:
+        entries = [f"$ command {n}\n[exit 1]\nsaid {n}\n" for n in range(20)]
+        output = self.run_failing(entries)
+        self.assertIn("probe: failed", output)
+        self.assertIn("said 19\n", output)
+        self.assertIn("said 8\n", output)
+        self.assertNotIn("said 7\n", output)
+
+    def test_a_failed_feature_with_no_commands_prints_only_its_line(self) -> None:
+        self.assertEqual(1, len(self.run_failing([]).splitlines()))
+
+    def test_printed_commands_hide_the_work_and_home_folders(self) -> None:
+        output = self.run_failing(["$ command\n[exit 1]\nin {work}/a and {home}/b"])
+        self.assertIn("in <work>/a and ~/b", output)
+        self.assertNotIn(str(Path.home()), output)
+
+    def test_a_long_command_output_is_cut_to_its_last_lines(self) -> None:
+        lines = "\n".join(f"line {n}" for n in range(500))
+        output = self.run_failing([f"$ command\n[exit 1]\n{lines}"])
+        self.assertIn("line 499", output)
+        self.assertNotIn("line 0\n", output)
+        self.assertLess(len(output.splitlines()), cli.FAILED_LINES_SHOWN + 5)
 
 
 if __name__ == "__main__":

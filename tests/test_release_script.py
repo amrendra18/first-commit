@@ -123,10 +123,16 @@ class ReleaseScriptTest(unittest.TestCase):
             "GITHUB_REPOSITORY",
             "`scripts/check full`, `scripts/check matrix`, and `scripts/verify full`",
             "A missing version stops the release before the first check",
+            (
+                "push the branch; wait for the CI run on that exact commit to "
+                "finish green on Linux and macOS; then push the tag"
+            ),
+            "After the tag push",
         ):
             self.assertIn(detail, " ".join(section.split()))
-        skill = (ROOT / ".agents/skills/first-commit/SKILL.md").read_text("utf-8")
-        self.assertIn("`scripts/release`", skill)
+        agents = " ".join((ROOT / "AGENTS.md").read_text("utf-8").split())
+        self.assertIn("run `scripts/release` and follow the release steps", agents)
+        self.assertIn("Never tag or push; report the printed commands", agents)
 
     def test_lint_finds_the_script_as_bash(self) -> None:
         self.assertEqual("#!/bin/bash", SCRIPT.read_text("utf-8").splitlines()[0])
@@ -220,27 +226,45 @@ class ReleaseScriptTest(unittest.TestCase):
             "release: scripts/check full exit 0",
             "release: scripts/verify full exit 0",
             "release: scripts/verify control exit 0",
-            f"Ready to release {TAG} at commit {commit}. Run:",
+            f"Ready to release {TAG} at commit {commit}.",
             f"  git tag -s {TAG} -m 'first-commit {VERSION}' {commit}",
             "  git push origin release",
+            "The branch is release: fast-forward main to this commit and push main",
+            f"https://github.com/{REPOSITORY}/actions",
             f"  git push origin {TAG}",
-            "The branch is release: merge it into main too",
             "  scripts/verify full --require-github",
             f"git+https://github.com/{REPOSITORY}.git@{TAG}'",
             f"version  # prints {VERSION}",
         ):
             with self.subTest(line=line):
                 self.assertIn(line, output)
+        self.assert_steps_in_order(output, commit, branch="release")
+
+    def assert_steps_in_order(self, output: str, commit: str, *, branch: str) -> None:
+        steps = [
+            "1. Push the branch:",
+            f"  git push origin {branch}",
+            (
+                f"2. Wait for the CI run on commit {commit} to finish green on "
+                "Linux and macOS:"
+            ),
+            "3. Push the tag:",
+            f"  git push origin {TAG}",
+            "Then prove the published release:",
+        ]
+        places = [output.find(step) for step in steps]
+        self.assertNotIn(-1, places, output)
+        self.assertEqual(sorted(places), places, output)
 
     def test_existing_tag_on_head_prints_only_the_pushes(self) -> None:
         commit = run_git(self.root, "rev-parse", "HEAD").stdout.decode().strip()
         run_git(self.root, "tag", TAG, commit)
         code, output, _, gates = self.release()
         self.assertEqual((0, GATES), (code, gates))
-        self.assertIn(f"Ready to release {TAG} at commit {commit}. Run:", output)
+        self.assertIn(f"Ready to release {TAG} at commit {commit}.", output)
         self.assertNotIn("git tag -s", output)
-        self.assertIn(f"  git push origin {TAG}", output)
-        self.assertNotIn("merge it into main", output)
+        self.assert_steps_in_order(output, commit, branch="main")
+        self.assertNotIn("fast-forward main", output)
 
     def test_unready_checkouts_stop_before_any_gate(self) -> None:
         cases = {

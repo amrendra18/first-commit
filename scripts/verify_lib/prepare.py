@@ -54,6 +54,7 @@ PREREQUISITE_TIMEOUT_SECONDS = 30
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
 IGNORED = (signal.SIGINT, *STOP_SIGNALS)
 AGENT_OUTPUT = "ssh-agent.out"
+AGENT_SOCKET = "ssh-agent.socket"
 AGENT_VARIABLES = ("SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
 
@@ -126,7 +127,8 @@ def prepare_run(python: str, work: Path, search_path: tuple[str, list[str]]) -> 
     home = work / "home"
     home.mkdir()
     (home / ".gitconfig").write_text(
-        f'[url "{work / "source"}"]\n\tinsteadOf = {HTTPS}\n\tinsteadOf = {SSH}\n',
+        f'[url "{work / "source"}"]\n\tinsteadOf = {HTTPS}\n\tinsteadOf = {SSH}\n'
+        "[init]\n\tdefaultBranch = main\n",
         "utf-8",
     )
     environment = {
@@ -190,7 +192,12 @@ def start_agent(run: Run) -> None:
     )
     output = run.work / AGENT_OUTPUT
     run.command(
-        ["/bin/sh", "-c", 'exec ssh-agent -s > "$1"', "sh", output], run.work, expect=0
+        [
+            *("/bin/sh", "-c", 'exec ssh-agent -a "$2" -s > "$1"', "sh"),
+            *(output, run.work / AGENT_SOCKET),
+        ],
+        run.work,
+        expect=0,
     )
     found = _agent_variables(run.work)
     for name in AGENT_VARIABLES:

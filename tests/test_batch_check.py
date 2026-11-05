@@ -1,7 +1,18 @@
 import re
 import unittest
+from unittest import mock
 
-from first_commit.git import OBJECT_ID, GitError, ObjectInfo, parse_batch_check
+from first_commit.candidates import CandidateError, object_sizes
+from first_commit.git import (
+    OBJECT_ID,
+    GitError,
+    ObjectInfo,
+    batch_check,
+    listed_commits,
+    parse_batch_check,
+)
+from tests.gitleaks_support import commit_fixture
+from tests.support import TemporaryRootTest, initialize_repository, run_git
 
 SHA1 = "a" * 40
 SHA256 = "b" * 64
@@ -46,6 +57,68 @@ class BatchCheckTest(unittest.TestCase):
         self.assertIsNone(answer.match(f"{SHA1} tree"))
         self.assertIsNone(answer.match(f"{SHA256} tree"))
         self.assertIsNotNone(answer.fullmatch(f"{SHA256} blob"))
+
+
+class ObjectHelpersTest(TemporaryRootTest):
+    def setUp(self) -> None:
+        super().setUp()
+        initialize_repository(self.root)
+        (self.root / "caf\u00e9.txt").write_text("abc\n", encoding="utf-8")
+        commit_fixture(self.root, "caf\u00e9.txt")
+        self.commit = run_git(self.root, "rev-parse", "HEAD").stdout.decode().strip()
+        raw = run_git(self.root, "rev-parse", "HEAD:caf\u00e9.txt").stdout
+        self.blob = raw.decode().strip()
+
+    def test_listed_commits_runs_rev_list_and_reads_pathspecs_literally(self) -> None:
+        self.assertEqual([self.commit], listed_commits(self.root, ("HEAD", "--")))
+        self.assertEqual([], listed_commits(self.root, ("HEAD", "--", "*.txt")))
+
+    def test_listed_commits_refuses_an_answer_that_is_no_object_id(self) -> None:
+        for answer in (b"not-a-commit\n", SHA1[:39].encode() + b"\n"):
+            with (
+                self.subTest(answer=answer),
+                mock.patch("first_commit.git.run_git", return_value=answer),
+                self.assertRaisesRegex(GitError, "^Git returned an invalid commit.$"),
+            ):
+                listed_commits(self.root, ("HEAD", "--"))
+
+    def test_batch_check_answers_each_name_and_runs_no_git_for_none(self) -> None:
+        self.assertEqual(
+            [ObjectInfo(self.blob, "blob", 4), None],
+            batch_check(self.root, ["HEAD:caf\u00e9.txt", "HEAD:missing.txt"]),
+        )
+        with mock.patch("first_commit.git.run_git") as run:
+            self.assertEqual([], batch_check(self.root, []))
+        run.assert_not_called()
+
+    def test_object_sizes_checks_each_id_kind_and_the_size_limit(self) -> None:
+        names = [self.commit, self.blob]
+        self.assertEqual(
+            {self.blob: 4}, object_sizes(self.root, [self.blob], "blob", 4, "File")
+        )
+        self.assertEqual({}, object_sizes(self.root, [], "commit", 0, "Commit"))
+        for name, kind in ((self.blob, "commit"), (SHA1, "blob")):
+            with (
+                self.subTest(name=name, kind=kind),
+                self.assertRaisesRegex(
+                    GitError, "^Git returned an inconsistent object.$"
+                ),
+            ):
+                object_sizes(self.root, [name], kind, None, "File")
+        answer = ObjectInfo(SHA1, "blob", 4)
+        with (
+            mock.patch("first_commit.candidates.batch_check", return_value=[answer]),
+            self.assertRaisesRegex(GitError, "^Git returned an inconsistent object.$"),
+        ):
+            object_sizes(self.root, [self.blob], "blob", None, "File")
+        with self.assertRaisesRegex(
+            CandidateError,
+            f"^Commit message of {self.commit[:12]} exceeds the size limit.$",
+        ):
+            object_sizes(self.root, names[:1], "commit", 1, "Commit message")
+        self.assertEqual(
+            {self.blob: 4}, object_sizes(self.root, [self.blob], "blob", None, "File")
+        )
 
 
 if __name__ == "__main__":

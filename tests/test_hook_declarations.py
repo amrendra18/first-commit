@@ -95,9 +95,31 @@ class HookDeclarationDoctorTest(TemporaryRootTest):
             with self.subTest(raw=raw[:40]):
                 self.assertEqual({STAGED_RULE, MESSAGE_RULE}, self.doctor_rules(raw))
 
-    def test_this_repositorys_own_hook_file_gets_no_warning(self) -> None:
-        raw = (PROJECT / ".pre-commit-config.yaml").read_bytes()
-        self.assertEqual(set(), self.doctor_rules(raw))
+    def test_this_checkouts_launcher_counts_only_in_this_checkout(self) -> None:
+        own = [
+            item.rule_id
+            for item in push_check_findings(PROJECT)
+            if item.rule_id.startswith("hooks.")
+        ]
+        self.assertEqual([], own)
+        launcher = self.root / "bin/first-commit"
+        launcher.parent.mkdir()
+        for label, make in (
+            ("a file of its own", lambda: launcher.write_text("exit 0\n", "utf-8")),
+            (
+                "a link to this checkout's launcher",
+                lambda: launcher.symlink_to(PROJECT / "bin/first-commit"),
+            ),
+        ):
+            with self.subTest(label):
+                launcher.unlink(missing_ok=True)
+                make()
+                raw = (PROJECT / ".pre-commit-config.yaml").read_bytes()
+                self.assertEqual({STAGED_RULE, MESSAGE_RULE}, self.doctor_rules(raw))
+                self.assertIn(
+                    "hooks.push-check",
+                    {item.rule_id for item in push_check_findings(self.root)},
+                )
 
 
 class HookFileDefectTest(TemporaryRootTest):

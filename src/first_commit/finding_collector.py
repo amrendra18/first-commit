@@ -1,5 +1,5 @@
 import hashlib
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 
 from first_commit.checks.privacy import (
     PrivacyPolicy,
@@ -8,7 +8,7 @@ from first_commit.checks.privacy import (
     privacy_policy,
 )
 from first_commit.checks.text import no_commit_findings, text_findings
-from first_commit.models import Candidate, Finding, Origin, Result, capped
+from first_commit.models import Candidate, Finding, KeptFindings, Origin, Result, capped
 from first_commit.policy import REQUIRED_DOCUMENTS, Policy
 
 TOO_LARGE_RULE = "files.too-large"
@@ -21,20 +21,34 @@ def _sort_key(item: Finding) -> tuple[str, int, str]:
 class FindingCollector:
     def __init__(self, cap: int) -> None:
         self.cap = cap
-        self.items: list[Finding] = []
+        self._kept = KeptFindings(cap + 1)
+        self._not_shown = 0
+
+    @property
+    def items(self) -> list[Finding]:
+        return self._kept.items
 
     @property
     def room(self) -> int:
-        return self.cap - len(self.items)
+        return self._kept.room - self._kept.errors
 
     def full(self) -> bool:
-        return self.room <= 0
+        return self._kept.full()
 
-    def add(self, findings: Iterable[Finding]) -> None:
-        self.items.extend(capped(findings, self.room))
+    def add(self, findings: Iterable[Finding], *, not_shown: int = 0) -> None:
+        for finding in findings:
+            self._kept.add(finding)
+        self._not_shown += not_shown
 
     def result(self, scope: str) -> Result:
-        return Result(scope=scope, findings=tuple(sorted(self.items, key=_sort_key)))
+        shown = KeptFindings(self.cap)
+        for finding in self.items:
+            shown.add(finding)
+        return Result(
+            scope=scope,
+            findings=tuple(sorted(shown.items, key=_sort_key)),
+            not_shown=self._kept.dropped + shown.dropped + self._not_shown,
+        )
 
 
 def split_forbidden(
@@ -54,12 +68,12 @@ def too_large_findings(paths: Sequence[str], *, max_findings: int) -> list[Findi
     return capped(findings, max_findings)
 
 
-def _required_document_findings(
-    documents: Mapping[str, Candidate],
+def required_document_findings(
+    documents: Mapping[str, Candidate], oversized: Collection[str]
 ) -> Iterator[Finding]:
     for path in REQUIRED_DOCUMENTS:
         candidate = documents.get(path)
-        if candidate is None or not candidate.content:
+        if path not in oversized and (candidate is None or not candidate.content):
             yield Finding(
                 rule_id="documents.required",
                 path=path,
@@ -67,9 +81,7 @@ def _required_document_findings(
             )
 
 
-def _is_immutable_vendor(
-    candidate: Candidate, vendor_hashes: Mapping[str, str]
-) -> bool:
+def is_immutable_vendor(candidate: Candidate, vendor_hashes: Mapping[str, str]) -> bool:
     return (
         candidate.origin != Origin.MESSAGE
         and candidate.regular_file
@@ -88,7 +100,7 @@ def _candidate_findings(
     found.add(no_commit_findings(candidate, max_findings=found.room))
     if found.full():
         return
-    immutable_vendor = _is_immutable_vendor(candidate, vendor_hashes)
+    immutable_vendor = is_immutable_vendor(candidate, vendor_hashes)
     found.add(
         text_findings(
             candidate, max_findings=found.room, immutable_vendor=immutable_vendor
@@ -110,11 +122,8 @@ def evaluate(
     found: FindingCollector,
     candidates: Iterable[Candidate],
     policy: Policy,
-    documents: Mapping[str, Candidate] | None,
     private_values: Sequence[str],
 ) -> None:
-    if documents is not None:
-        found.add(_required_document_findings(documents))
     vendor_hashes = {item.path: item.sha256 for item in policy.immutable_vendor_files}
     privacy = privacy_policy(policy, private_values)
     for candidate in candidates:

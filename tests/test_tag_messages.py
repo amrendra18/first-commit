@@ -35,6 +35,11 @@ class TagMessageTest(TemporaryRootTest):
     @needs_real_scanner
     def setUp(self) -> None:
         super().setUp()
+        unsigned = mock.patch(
+            "first_commit.validation.unsigned_commit_findings", return_value=[]
+        )
+        unsigned.start()
+        self.addCleanup(unsigned.stop)
         self.head = pushed_base_commit(self.root)
         self.policy = parse_policy(b'{"schema_version":1}', self.root)
         run_git(self.root, "config", "tag.gpgSign", "false")
@@ -166,20 +171,20 @@ class TagMessageParsingTest(TemporaryRootTest):
         policy = parse_policy(b'{"schema_version":1}', self.root)
         tag_ref = TAG.encode() + b" tag\n"
         for remotes, answers, error in (
-            (["origin"], (b"HEAD\n",), "invalid remote commit"),
-            ([], (b"", b"HEAD tag\n"), "invalid tag"),
-            ([], (b"", tag_ref, TAG.encode() + b" blob 3\n"), "inconsistent"),
-            ([], (b"", tag_ref, TAG.encode() + b" missing\n"), "inconsistent"),
+            (("--remotes=origin",), (b"HEAD\n",), "invalid commit"),
+            ((), (b"", b"HEAD tag\n"), "invalid tag"),
+            ((), (b"", tag_ref, TAG.encode() + b" blob 3\n"), "inconsistent"),
+            ((), (b"", tag_ref, TAG.encode() + b" missing\n"), "inconsistent"),
         ):
+            git = mock.Mock(side_effect=answers)
             with (
                 self.subTest(answers=answers),
                 mock.patch(
-                    "first_commit.history_messages.configured_remotes",
+                    "first_commit.history_messages.remote_patterns",
                     return_value=remotes,
                 ),
-                mock.patch(
-                    "first_commit.history_messages.run_git", side_effect=answers
-                ),
+                mock.patch("first_commit.history_messages.run_git", git),
+                mock.patch("first_commit.git.run_git", git),
                 self.assertRaisesRegex(GitError, error),
             ):
                 history_message_findings(

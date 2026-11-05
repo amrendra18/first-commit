@@ -57,8 +57,8 @@ scripts/verify fast
 
 This repository's pre-push hook runs the push checks, then
 `scripts/check full`, then `scripts/verify fast`, on every push that adds
-commits. Together they take about 7 minutes (301 s and 106 s on an
-Apple-silicon Mac) and need network.
+commits. They need network. On 2026-10-23 the unit tests alone took 446 s
+in a `scripts/check full` run on an Apple-silicon Mac.
 
 Both run through `scripts/check-pushed` on exactly the pushed commit, so an
 uncommitted fix cannot pass a broken commit and an uncommitted edit cannot
@@ -117,9 +117,8 @@ For maintainers. The version is `__version__` in
 document with it.
 
 1. In one commit, set the new version in `src/first_commit/__init__.py`,
-   `pyproject.toml`, and the README install and tag-check lines. From the
-   second release on, keep a `CHANGELOG.md` with one entry per major release,
-   and add it to the document list in `tests/test_metadata.py`.
+   `pyproject.toml`, and the README install and tag-check lines, and add the
+   release's entry to [CHANGELOG.md](CHANGELOG.md).
 2. Run `scripts/release`. It stops unless the tree is clean, HEAD is on a
    branch, and the tag is new or already names HEAD. It then runs
    `scripts/check full`, `scripts/check matrix`, and `scripts/verify full`,
@@ -128,7 +127,12 @@ document with it.
    or a build of each in the folder `FIRST_COMMIT_PYTHONS` names. A missing
    version stops the release before the first check, and the message names
    it. It never tags or pushes; the maintainer runs those commands.
-3. After the push, run `scripts/verify full --require-github`, and install the
-   tag from the README's HTTPS address.
-4. Publish a GitHub release for the tag whose notes name the printed commit
+3. Run the printed steps in order: push the branch; wait for the CI run on
+   that exact commit to finish green on Linux and macOS; then push the tag.
+   CI runs on pushes to `main`, so a release from another branch
+   fast-forwards `main` to the commit first. A red run stops the release
+   before the tag is public.
+4. After the tag push, run `scripts/verify full --require-github`, and install
+   the tag from the README's HTTPS address.
+5. Publish a GitHub release for the tag whose notes name the printed commit
    SHA. The README's install check compares the tag against it.

@@ -33,20 +33,24 @@ from first_commit.setup_command import declares_setup_hook, setup_command
 
 MAX_POLICY_BYTES = MEBIBYTE
 REQUIRED_DOCUMENTS = ("README.md", "AGENTS.md")
-FIELDS = {
+FIELDS = (
     "schema_version",
-    "public_environment_files",
-    "private_literal_exceptions",
-    "privacy_detector_exceptions",
-    "forbidden_paths",
     "public_emails",
     "commit_body_sections",
-    "immutable_vendor_files",
+    "public_environment_files",
+    "forbidden_paths",
+    "private_literal_exceptions",
+    "privacy_detector_exceptions",
     "public_github_owner_urls",
-}
+    "immutable_vendor_files",
+)
 POLICY_PATH = ".repo-policy.json"
 POLICY_NAME = f"The project policy file {POLICY_PATH}"
 PRIVATE_VALUES_PATH = ".local/first-commit/private-values.txt"
+
+
+class PolicyMissingError(PolicyError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -75,18 +79,35 @@ def _policy_data(raw: bytes) -> dict[str, Any]:
     )
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=duplicate)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+    except PolicyError:
+        raise
+    # ValueError also covers bad UTF-8, bad JSON, and a number over 4,300 digits.
+    except (ValueError, RecursionError) as error:
         raise PolicyError(f"{POLICY_NAME} is not valid UTF-8 JSON.") from error
-    if not isinstance(data, dict) or set(data) - FIELDS:
+    if not isinstance(data, dict):
+        raise PolicyError(f"{POLICY_NAME} must be a JSON object.")
+    if set(data) - set(FIELDS):
         raise PolicyError(f"{POLICY_NAME} has unknown fields.")
     if not is_exact_int(data.get("schema_version")) or data["schema_version"] != 1:
-        raise PolicyError(f"{POLICY_NAME} has an unsupported schema.")
+        raise PolicyError(
+            f"{POLICY_NAME} has an unsupported schema_version; supported: 1."
+        )
     return data
 
 
 def parse_policy(
     raw: bytes, root: Path, contributor: Contributor | None = None
 ) -> Policy:
+    try:
+        return _parsed_policy(raw, root, contributor)
+    except PolicyError as error:
+        raise PolicyError(
+            f"{error}\nfix: edit {POLICY_PATH} to match 'Project policy file' in the "
+            f"first-commit ARCHITECTURE.md; the accepted fields are {', '.join(FIELDS)}."
+        ) from error
+
+
+def _parsed_policy(raw: bytes, root: Path, contributor: Contributor | None) -> Policy:
     data = _policy_data(raw)
     commit_body_sections = flag(data, "commit_body_sections", default=True)
     public_github_owner_urls = flag(data, "public_github_owner_urls", default=False)
@@ -127,17 +148,16 @@ def parse_policy(
 
 def _unreadable_policy(path: Path, root: Path) -> PolicyError:
     name = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-    if os.path.lexists(path):
-        reason = (
-            "cannot be read; make it a regular file of at most "
-            f"{MAX_POLICY_BYTES // MEBIBYTE} MiB"
-        )
-    else:
+    if not os.path.lexists(path):
         command = setup_command(setup_hook=declares_setup_hook(root))
-        reason = (
-            f'does not exist; run `{command}`, or create it as {{"schema_version": 1}}'
+        return PolicyMissingError(
+            f"The project policy file {name} does not exist.\nfix: run `{command}`, "
+            'or create it as {"schema_version": 1}.'
         )
-    return PolicyError(f"The project policy file {name} {reason}.")
+    return PolicyError(
+        f"The project policy file {name} cannot be read; make it a regular file of "
+        f"at most {MAX_POLICY_BYTES // MEBIBYTE} MiB."
+    )
 
 
 def load_policy(path: Path, root: Path) -> Policy:

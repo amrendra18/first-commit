@@ -11,6 +11,7 @@ from first_commit.gitleaks_scanner import (
     ScannerTimeoutError,
     validate_scanner,
 )
+from first_commit.models import RepositoryContentError
 from first_commit.setup_hooks import hook_bytes
 from tests.gitleaks_support import (
     needs_real_scanner,
@@ -163,6 +164,7 @@ class GitleaksTest(unittest.TestCase):
                 encoding="utf-8",
             )
             executable.chmod(0o755)
+            initialize_repository(root)
 
             with recorded_report_folders() as directories:
                 findings = scan_history(
@@ -176,7 +178,7 @@ class GitleaksTest(unittest.TestCase):
             self.assertEqual(
                 "git --redact --no-banner --exit-code=10 "
                 "--ignore-gitleaks-allow --gitleaks-ignore-path .gitleaksignore "
-                "--log-opts=--exclude=refs/stash --all "
+                "--log-opts=--no-textconv --exclude=refs/stash --all "
                 f"--report-format=json --report-path={directories[0] / REPORT_NAME} {root}",
                 log.read_text(encoding="utf-8").strip(),
             )
@@ -196,6 +198,7 @@ class GitleaksTest(unittest.TestCase):
                 encoding="utf-8",
             )
             executable.chmod(0o755)
+            initialize_repository(root)
 
             scan_history(
                 root,
@@ -287,7 +290,9 @@ class GitleaksTest(unittest.TestCase):
             canary = "private-scanner-configuration-canary"
             (root / ".gitleaks.toml").write_text(canary, encoding="utf-8")
 
-            with self.assertRaisesRegex(DependencyError, "configuration") as context:
+            with self.assertRaisesRegex(
+                RepositoryContentError, "holds .gitleaks.toml"
+            ) as context:
                 scan_history(root, max_findings=1, executable="/gitleaks")
 
         self.assertNotIn(canary, str(context.exception))

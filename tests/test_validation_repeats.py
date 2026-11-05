@@ -27,6 +27,10 @@ class GeneratedRepeatsTest(ValidationFixture):
             ),
             patch("first_commit.validation._index_documents", return_value={}),
             patch("first_commit.validation.evaluate"),
+            patch(
+                "first_commit.validation.required_document_findings",
+                return_value=[],
+            ),
             patch("first_commit.validation._add_environment_findings"),
             patch("first_commit.validation.working_candidate_paths", return_value=()),
             patch("first_commit.validation.working_candidates", return_value=generated),

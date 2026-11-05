@@ -72,26 +72,47 @@ class MetadataTest(unittest.TestCase):
     def test_documentation_inventory_has_one_file_per_contract(self) -> None:
         expected = {
             "AGENTS.md",
+            "CHANGELOG.md",
             "CLAUDE.md",
             "README.md",
             "SECURITY.md",
             "CONTRIBUTING.md",
             "ARCHITECTURE.md",
-            ".agents/skills/first-commit/SKILL.md",
+            "skills/first-commit/SKILL.md",
         }
         actual = {
             path.relative_to(self.root).as_posix() for path in self.root.glob("*.md")
         }
         actual.update(
             path.relative_to(self.root).as_posix()
-            for path in (self.root / ".agents").rglob("*.md")
+            for folder in (".agents", "skills")
+            for path in (self.root / folder).rglob("*.md")
         )
         self.assertEqual(expected, actual)
         policy = json.loads((self.root / ".repo-policy.json").read_text("utf-8"))
+        exceptions = policy.pop("private_literal_exceptions")
         self.assertEqual(
-            {"schema_version": 1, "public_emails": [AGENT_TRAILER_EMAIL]}, policy
+            {
+                "schema_version": 1,
+                "public_emails": [AGENT_TRAILER_EMAIL],
+                "public_github_owner_urls": True,
+            },
+            policy,
         )
-        for path in expected - {".agents/skills/first-commit/SKILL.md", "CLAUDE.md"}:
+        self.assertEqual(
+            [
+                ("README.md", 301),
+                ("pyproject.toml", 9),
+                ("src/first_commit/hooks.py", 20),
+            ],
+            [(entry["path"], entry["line"]) for entry in exceptions],
+        )
+        for entry in exceptions:
+            with self.subTest(path=entry["path"]):
+                lines = (self.root / entry["path"]).read_bytes().split(b"\n")
+                digest = hashlib.sha256(lines[entry["line"] - 1]).hexdigest()
+                self.assertEqual(entry["sha256"], digest)
+        for path in expected - {"skills/first-commit/SKILL.md", "CLAUDE.md"}:
             content = (self.root / path).read_text("utf-8")
             if path == "README.md":
                 content = content.removeprefix(BANNER)
@@ -116,7 +137,7 @@ class MetadataTest(unittest.TestCase):
     def test_public_documents_hold_no_private_era_or_workflow_words(self) -> None:
         documents = [
             *self.root.glob("*.md"),
-            *(self.root / ".agents").rglob("*.md"),
+            *(self.root / "skills").rglob("*.md"),
             *(self.root / ".github").rglob("*.md"),
             *(self.root / "verify").rglob("*.md"),
         ]
@@ -132,6 +153,35 @@ class MetadataTest(unittest.TestCase):
         )
         self.assertIn(f"Exit codes: {codes}.", " ".join(reference.split()))
 
+    def test_documents_name_no_retired_exit_code(self) -> None:
+        retired = re.compile(
+            r"[Ee]xits? (with )?[34]\b|exit (code )?[34]\b|Exit [34]\b"
+        )
+        for line in (
+            "Elsewhere, every command stops with exit 3.",
+            "A file that grows past it during a run gives exit 4",
+            "Exit 4, `Git timed out.`",
+            "names the folder and exits 3 before any work.",
+            "the hooks exit with 4",
+        ):
+            with self.subTest(control=line):
+                self.assertRegex(line, retired)
+        for line in ("stops with exit 1", "exits 2", "exit 5, held", "exit 30"):
+            with self.subTest(control=line):
+                self.assertNotRegex(line, retired)
+        documents = [
+            self.root / "README.md",
+            self.root / "ARCHITECTURE.md",
+            *sorted((self.root / "verify" / "features").glob("*.md")),
+        ]
+        found = [
+            f"{document.relative_to(self.root)}:{number}"
+            for document in documents
+            for number, line in enumerate(document.read_text("utf-8").splitlines(), 1)
+            if retired.search(line)
+        ]
+        self.assertEqual([], found)
+
     def test_contributing_runs_only_scripts_that_exist(self) -> None:
         contributing = (self.root / "CONTRIBUTING.md").read_text("utf-8")
         blocks = "".join(re.findall(r"```sh\n(.*?)```", contributing, re.DOTALL))
@@ -141,12 +191,24 @@ class MetadataTest(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertTrue(os.access(self.root / script, os.X_OK))
 
+    def test_contributing_dates_each_measured_runtime(self) -> None:
+        text = " ".join((self.root / "CONTRIBUTING.md").read_text("utf-8").split())
+        sentences = [
+            sentence
+            for sentence in re.split(r"(?<=\.) ", text)
+            if re.search(r"\b\d+ (?:s|seconds|minutes)\b", sentence)
+        ]
+        self.assertTrue(sentences)
+        for sentence in sentences:
+            with self.subTest(sentence=sentence):
+                self.assertRegex(sentence, r"\b\d{4}-\d{2}-\d{2}\b")
+
     def test_readme_covers_upgrade_and_removal(self) -> None:
         readme = (self.root / "README.md").read_text("utf-8")
         section = readme.split("\n## Upgrade\n", 1)[1].split("\n## Learn more\n", 1)[0]
         for detail in (
-            "pre-commit autoupdate --freeze",
-            "pre-commit uninstall",
+            "git ls-remote",
+            "pre-commit uninstall -t pre-commit -t commit-msg -t pre-push",
             "git config --local --unset-all",
             "rm -rf .local/first-commit .local/bin/gitleaks",
         ):
@@ -162,27 +224,43 @@ class MetadataTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command + "\n", readme)
 
-    def test_readme_first_run_commands_are_ordered_and_use_the_tool_path(
+    def test_readme_first_run_commands_are_ordered_and_use_the_command(
         self,
     ) -> None:
         readme = (self.root / "README.md").read_text("utf-8")
         steps = (
             f"git+{HTTPS_REPOSITORY}.git@v{__version__}",
+            "\nln -s ~/.local/share/first-commit/bin/first-commit ~/.local/bin/first-commit\n",
+            "\nfirst-commit --version\n",
             f"git+{SSH_REPOSITORY}.git@v{__version__}",
-            "FIRST_COMMIT=/path/first-commit/bin/first-commit",
-            '"$FIRST_COMMIT" version',
-            '"$FIRST_COMMIT" setup --dry-run',
-            '"$FIRST_COMMIT" setup\n',
-            '"$FIRST_COMMIT" doctor',
+            "\nfirst-commit setup --dry-run\n",
+            "\nfirst-commit setup\n",
+            "\nfirst-commit doctor\n",
             "\ngit add ",
             "\ngit commit\n",
-            '"$FIRST_COMMIT" check',
+            "\nfirst-commit check ",
         )
         positions = [readme.index(step) for step in steps]
         self.assertEqual(sorted(positions), positions)
+        tool_path = (
+            r"/bin/first-commit (setup|check|doctor|hook)|\$FIRST_COMMIT\b"
+            r"|\bFIRST_COMMIT="
+        )
+        for line in (
+            "/path/first-commit/bin/first-commit setup",
+            '"$FIRST_COMMIT" setup',
+            "FIRST_COMMIT=/path/first-commit/bin/first-commit",
+        ):
+            with self.subTest(control=line):
+                self.assertRegex(line, tool_path)
+        self.assertNotRegex(
+            "ln -s ~/.local/share/first-commit/bin/first-commit ~/.local/bin/first-commit",
+            tool_path,
+        )
+        self.assertNotRegex("FIRST_COMMIT_TRUST_SELF=1 pre-commit run", tool_path)
         commands = re.findall(r"```sh\n(.*?)```", readme, re.DOTALL)
         for line in "".join(commands).splitlines():
-            self.assertFalse(line.startswith("first-commit "), line)
+            self.assertNotRegex(line, tool_path, line)
 
     def test_package_and_policy_versions_match(self) -> None:
         example = json.loads(
@@ -263,7 +341,7 @@ class MetadataTest(unittest.TestCase):
     def test_documentation_links_and_anchors_resolve(self) -> None:
         documents = [
             *self.root.glob("*.md"),
-            *(self.root / ".agents").rglob("*.md"),
+            *(self.root / "skills").rglob("*.md"),
             *(self.root / ".github").rglob("*.md"),
             *(self.root / "verify").rglob("*.md"),
         ]

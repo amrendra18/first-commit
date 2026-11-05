@@ -8,6 +8,7 @@ from first_commit import (
     gitleaks_scanner,
     policy,
     policy_fields,
+    pushed,
 )
 from first_commit.git import GIT_TIMEOUT_SECONDS
 
@@ -35,6 +36,7 @@ class FixedLimitsTest(unittest.TestCase):
         )
         self.assertEqual(1 * MIB, policy.MAX_POLICY_BYTES)
         self.assertEqual(120, GIT_TIMEOUT_SECONDS)
+        self.assertEqual(64 * 1024, pushed.MAX_REVISION_BYTES)
         self.assertEqual(
             (120, 600),
             (
@@ -48,11 +50,13 @@ class FixedLimitsTest(unittest.TestCase):
             {
                 "Bytes per file": "10 MiB",
                 "Paths per scope": "10,000",
+                "File versions a pre-push scan reads": "10,000",
                 "Findings per scope": "1,000",
                 "Commit message": "1 MiB",
                 "Policy file": "1 MiB",
                 "One Git command, or one blob from `git cat-file --batch`": "120 seconds",
-                "One Gitleaks scan": "120 seconds; 600 for a full history scan",
+                "One Gitleaks scan": "120 seconds; 600 for a history or pre-push scan",
+                "Remote names `check --new-only` leaves out": "64 KiB",
             },
             limits_table(),
         )

@@ -10,7 +10,7 @@ import yaml
 from first_commit.git import git_executable
 from first_commit.gitleaks_scanner import DependencyError
 from first_commit.hooks import GITHUB_REPOSITORY, HTTPS_REPOSITORY, SSH_REPOSITORY
-from first_commit.models import SetupError
+from first_commit.models import SetupBlockedError, SetupError
 from first_commit.setup import (
     SetupRequest,
     _preflight_source,
@@ -243,7 +243,7 @@ class HookSourceSetupTest(SetupFixture):
         run_git(self.root, "init", "-q")
         self.local_hooks()
         with setup_lock(self.root):
-            with self.assertRaisesRegex(SetupError, "already running"):
+            with self.assertRaisesRegex(SetupBlockedError, "already running"):
                 setup_repository(
                     self.root, SetupRequest(revision=REVISION), contributor=self.person
                 )
@@ -273,7 +273,7 @@ class HookSourceSetupTest(SetupFixture):
             patch(
                 "first_commit.setup_apply.os.fstat", side_effect=between_open_and_lock
             ),
-            self.assertRaisesRegex(SetupError, "already running"),
+            self.assertRaisesRegex(SetupBlockedError, "already running"),
         ):
             with setup_lock(self.root):
                 self.fail("two setups ran at once")
@@ -313,10 +313,15 @@ class HookSourceSetupTest(SetupFixture):
             "first_commit.setup.subprocess.run",
             return_value=subprocess.CompletedProcess([], 128),
         ):
-            with self.assertRaisesRegex(
-                DependencyError, "Git exited 128.*--transport ssh"
-            ):
+            with self.assertRaises(DependencyError) as failed:
                 _preflight_source(self.root, HTTPS_REPOSITORY)
+        self.assertEqual(
+            f"Hook source preflight: Git exited 128 for {HTTPS_REPOSITORY}.\n"
+            "fix: check network access to github.com and any proxy settings, then "
+            "run setup again; with a GitHub SSH key, --transport ssh is another "
+            "route.",
+            str(failed.exception),
+        )
         with patch(
             "first_commit.setup.subprocess.run",
             side_effect=OSError("private-canary"),

@@ -89,11 +89,17 @@ def _subject_problems(
     match = HEADER.fullmatch(subject)
     if not controls and GENERATED.match(subject):
         return []
+    sections = (
+        [("message.sections", Severity.ERROR, SECTIONS_SUMMARY)]
+        if require_sections and not _valid_sections(lines, subject_index)
+        else []
+    )
     if controls or match is None:
-        return [("message.header", Severity.ERROR, HEADER_SUMMARY)]
+        return [("message.header", Severity.ERROR, HEADER_SUMMARY), *sections]
     subject = match.group("subject")
     if len(subject) > MAX_SUBJECT_CHARS:
         return [
+            *sections,
             (
                 "message.subject-length",
                 Severity.ERROR,
@@ -101,11 +107,9 @@ def _subject_problems(
                     f"Subject exceeds {MAX_SUBJECT_CHARS} characters; move details "
                     "to the body."
                 ),
-            )
+            ),
         ]
-    problems = []
-    if require_sections and not _valid_sections(lines, subject_index):
-        problems.append(("message.sections", Severity.ERROR, SECTIONS_SUMMARY))
+    problems = sections
     if len(subject) > PREFERRED_SUBJECT_CHARS:
         problems.append(
             (

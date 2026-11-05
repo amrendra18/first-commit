@@ -50,10 +50,10 @@ class CandidatesTest(unittest.TestCase):
 
         with patch(
             "first_commit.candidates.run_git",
-            side_effect=(b"one\0", b"two\0", b"three\0"),
+            side_effect=(b"one\0", b"two\0"),
         ):
             with self.assertRaisesRegex(CandidateError, "count"):
-                environment_files(Path("/repository"), (".env",), max_files=2)
+                environment_files(Path("/repository"), (".env",), max_files=1)
 
     def test_index_blobs_reject_bad_metadata_and_inconsistent_git_output(
         self,
@@ -74,12 +74,12 @@ class CandidatesTest(unittest.TestCase):
         for outputs, message in cases:
             with (
                 self.subTest(outputs=outputs),
-                patch("first_commit.candidates.run_git", side_effect=outputs),
+                patch("first_commit.git.run_git", side_effect=outputs),
                 self.assertRaisesRegex(CandidateError, message),
             ):
                 _index_blobs(root, {"value": ENTRY}, 10)
         with (
-            patch("first_commit.candidates.run_git", return_value=header),
+            patch("first_commit.git.run_git", return_value=header),
             patch(
                 "first_commit.candidates.cat_file_blobs",
                 side_effect=GitError("Git returned inconsistent object content."),
@@ -90,7 +90,7 @@ class CandidatesTest(unittest.TestCase):
 
     def test_index_blobs_skip_oversized_blobs_without_reading_them(self) -> None:
         with patch(
-            "first_commit.candidates.run_git",
+            "first_commit.git.run_git",
             return_value=OBJECT_ID.encode() + b" blob 11\n",
         ) as git:
             loaded = _index_blobs(Path("/repository"), {"value": ENTRY}, 10)
@@ -104,9 +104,12 @@ class CandidatesTest(unittest.TestCase):
             with self.assertRaisesRegex(CandidateError, "no content in the Git index"):
                 index_candidate(root, "value", 10)
         entry = b"100644 " + OBJECT_ID.encode() + b" 0\tvalue\0"
-        with patch(
-            "first_commit.candidates.run_git",
-            side_effect=(entry, OBJECT_ID.encode() + b" blob 11\n"),
+        with (
+            patch("first_commit.candidates.run_git", return_value=entry),
+            patch(
+                "first_commit.git.run_git",
+                return_value=OBJECT_ID.encode() + b" blob 11\n",
+            ),
         ):
             with self.assertRaisesRegex(CandidateError, "size limit"):
                 index_candidate(root, "value", 10)
