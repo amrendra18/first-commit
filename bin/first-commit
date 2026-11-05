@@ -22,4 +22,5 @@ export PYTHONPATH="$project_dir/src"
 # The CLI names this path in the next commands of a JSON error object.
 export FIRST_COMMIT_EXECUTABLE="$project_dir/bin/first-commit"
 export PATH="$project_dir/.local/bin:$PATH"
-exec "$python_command" -m first_commit.cli "$@"
+# -P keeps the current folder off the import path, so a repository cannot replace the tool.
+exec "$python_command" -P -m first_commit.cli "$@"

@@ -11,7 +11,7 @@ from verify_lib.core import (
 )
 
 # Runs the snapshot with the harness Python, so the hooks find this tool on PATH.
-WRAPPER = '#!/bin/sh\nPYTHONPATH={source} exec {python} -m first_commit.cli "$@"\n'
+WRAPPER = '#!/bin/sh\nPYTHONPATH={source} exec {python} -P -m first_commit.cli "$@"\n'
 DOCTOR_HOOK = "pre-commit run first-commit-doctor --hook-stage manual"
 
 
