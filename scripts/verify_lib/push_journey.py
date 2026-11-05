@@ -177,7 +177,6 @@ def _push_commit_older_than_setup(run: Run, remote: Path) -> list[str]:
     ]
 
 
-# The commit hooks pass a commit made with --no-gpg-sign; only the push stops it.
 def _push_unsigned_commit(run: Run, remote: Path) -> list[str]:
     project = run.project
     _, pushed = run.command(["git", "rev-parse", "HEAD"], project, expect=0)

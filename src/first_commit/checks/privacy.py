@@ -45,8 +45,6 @@ PATTERNS: tuple[tuple[str, str, str], ...] = (
         "Detected a literal user-home path.",
     ),
 )
-# With the PATTERNS rules, the rules privacy_detector_exceptions may name; a test
-# keeps policy_fields.PRIVACY_DETECTOR_RULES equal to them.
 UNAPPROVED_EMAIL_RULE = "privacy.unapproved-email"
 EXAMPLE_DOMAINS = {"example.com", "example.net", "example.org"}
 RESERVED_TEST_SUFFIXES = (".invalid", ".test")
@@ -55,7 +53,6 @@ RESERVED_TEST_SUFFIXES = (".invalid", ".test")
 # the address shape without being anyone's address.
 PROTOCOL_DOMAINS = {"openssh.com", "libssh.org"}
 GITHUB_OWNER_PREFIX = re.compile(r"(?:https?://|ssh://git@|git@)github\.com[/:]\Z")
-# GitHub owner names hold letters, digits, and hyphens, at most 39 of them.
 MAX_OWNER = 39
 OWNER = re.compile(r"[a-z0-9-]{1,39}")
 OWNER_END = re.compile(r"[a-z0-9-]+\Z")
@@ -123,8 +120,6 @@ def forbidden_path_policy(
     return None
 
 
-# One file can hold many matches, so its newline offsets are found once and each
-# line number is a binary search; a str caches its hash, so the lookup is cheap.
 @functools.lru_cache(maxsize=4)
 def _newlines(text: str) -> tuple[int, ...]:
     return tuple(match.start() for match in NEWLINE.finditer(text))
@@ -163,7 +158,6 @@ def _approved_lines(
     return approved
 
 
-# The value may sit anywhere inside the owner segment, such as `<value>-labs`.
 def _github_owner(normalized: str, start: int, value: str) -> bool:
     end = start + len(value)
     before = OWNER_END.search(normalized, max(0, start - MAX_OWNER), start)

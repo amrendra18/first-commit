@@ -118,7 +118,6 @@ class ToolContractTest(unittest.TestCase):
 
     def help_texts(self) -> list[str]:
         top = self.call("--help").stdout
-        # A verb the help lists but VERBS leaves out would never be probed.
         listed = set(LISTED_VERB.findall(top.split("COMMAND", 2)[-1]))
         self.assertEqual(set(TOP_VERBS), listed)
         texts = [top]
@@ -233,7 +232,6 @@ class ToolContractTest(unittest.TestCase):
         self.assertIn("first-commit --version", commands)
         self.assertIn("XDG_CONFIG_HOME", readme)
 
-    # Runs the other probes itself, so a run of this probe alone checks every call.
     def test_9_8_state_folder_stays_empty(self) -> None:
         for probe in (
             self.test_9_1_version,

@@ -70,8 +70,6 @@ UNSUPPORTED_PLATFORM = (
     "Linux) on Windows."
 )
 
-# Each error class main reports, with its JSON error code and exit code; the first
-# matching row wins, so a subclass comes before its parent.
 ERRORS: tuple[tuple[type[Exception], str, ExitCode], ...] = (
     (ArgumentError, "invalid-arguments", ExitCode.INPUT),
     (ConfirmationNeededError, "needs-confirmation", ExitCode.HELD),
@@ -96,8 +94,6 @@ ERRORS: tuple[tuple[type[Exception], str, ExitCode], ...] = (
 HANDLED_ERRORS = tuple(kind for kind, _, _ in ERRORS)
 
 
-# A wrapper may raise its own error from a limit stop, such as a Git timeout under
-# a candidate listing; the code names the limit, the cause.
 def _row(error: BaseException) -> tuple[type[Exception], str, ExitCode]:
     cause: BaseException | None = error
     while cause is not None:
@@ -110,10 +106,7 @@ def _row(error: BaseException) -> tuple[type[Exception], str, ExitCode]:
 
 STOPPED = "first-commit stopped on {}."
 INTERRUPTED = STOPPED.format("Ctrl-C")
-# bin/first-commit sets this to its own absolute path; main removes it, so no
-# program that first-commit starts inherits it.
 EXECUTABLE_VARIABLE = "FIRST_COMMIT_EXECUTABLE"
-# Inside these stages the program path is pre-commit's cache, which no one runs.
 HOOK_STAGES = frozenset({"pre-commit", "commit-msg", "pre-push"})
 FIX_LINE = re.compile(r"\n\s*fix: ")
 NAMED_COMMAND = re.compile(r"\brun ([`'])[^`']+\1")
@@ -132,19 +125,16 @@ class StopSignalError(KeyboardInterrupt):
 
 
 def _stop(number: int, _frame: FrameType | None) -> None:
-    # Later signals are ignored, so none can cut short the cleanup the first starts.
     for each in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(each, signal.SIG_IGN)
     raise StopSignalError(number)
 
 
-# Signal handlers work only in the main thread; elsewhere the block runs unchanged.
 @contextmanager
 def _signals_stop_the_run() -> Iterator[None]:
     if threading.current_thread() is not threading.main_thread():
         yield
         return
-    # A signal the run started with ignored, as under nohup, stays ignored.
     numbers = (signal.SIGTERM, signal.SIGHUP)
     previous = {
         number: signal.signal(number, _stop)
@@ -185,7 +175,6 @@ def _checks(
     yield "history", _checked_history(root, policy, scope, values)
 
 
-# A push sends commits only, so the working tree and the index stay at commit time.
 def _push_checks(
     root: Path, policy: Policy, values: tuple[str, ...], scope: PushedScope | None
 ) -> Iterator[tuple[str, Result]]:
@@ -262,7 +251,6 @@ def _require_readable_index_file(root: Path, options: argparse.Namespace) -> Non
 
 def _version(output_format: str) -> None:
     if output_format == "json":
-        # A pip install records no edits to its source, so modified is unknown.
         revision = hooks.installed_revision()
         print_object({"version": __version__, "revision": revision, "modified": None})
     else:
@@ -353,7 +341,6 @@ def _report(
     hidden: Sequence[str],
 ) -> int:
     linked = linked_main_worktree(root)
-    # Doctor loads no private values to mask a path with, so it names no path.
     if linked is not None and options.command == "doctor":
         main_worktree: str | None = UNNAMED_MAIN_WORKTREE
     else:
@@ -364,7 +351,6 @@ def _report(
     return ExitCode.PASSED if passed else ExitCode.FINDING
 
 
-# A start as a module (python -m, python -c) leaves no program file in sys.argv[0].
 def _program(exported: str) -> str | None:
     if Path(exported).is_absolute():
         return exported
@@ -388,8 +374,6 @@ def _in_hook_stage(words: Sequence[str]) -> bool:
     return len(words) > 1 and words[0] == "hook" and words[1] in HOOK_STAGES
 
 
-# The check hook command, or none, and what message adds. The command runs only from
-# inside the repository, so a git-access error names none.
 def _check_hook(code: str) -> tuple[list[str], str]:
     if code == "git-access":
         return [], (

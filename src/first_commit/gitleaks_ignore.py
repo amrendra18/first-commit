@@ -107,15 +107,12 @@ def _digests(root: Path, sizes: dict[str, int]) -> dict[str, _BlobDigest]:
 
 
 def _digest_of(content: bytes) -> _BlobDigest:
-    # The text after a final newline is not a line.
     lines = content.count(b"\n") + (bool(content) and not content.endswith(b"\n"))
     return _BlobDigest(
         lines, hashlib.sha256(content).hexdigest(), content.startswith(LFS_POINTER)
     )
 
 
-# The staged check reads a clean-filter file's working copy, not the pointer the
-# index holds, so a staged exception for it is checked against that copy.
 def _working_digests(
     root: Path, checks: Sequence[_DigestCheck]
 ) -> dict[str, _BlobDigest]:
@@ -207,9 +204,6 @@ def _check_digests(
         if found is None:
             continue
         stored = digests[found[0]]
-        # Only a stored Git LFS pointer stands for another file: a staged one is
-        # checked against the working copy, and a commit's is not checked, as no
-        # Gitleaks finding names a pointer. Real bytes are checked as they are.
         if not (stored.lfs_pointer and check.entry.path in working):
             _verify(check, stored, digest_command(check.source))
         elif check.commit is None:

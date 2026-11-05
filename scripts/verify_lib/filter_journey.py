@@ -6,9 +6,6 @@ FILTERED_FILE = "data.dat"
 FILTER_CONFIG = "filter.lfs.clean"
 
 
-# A clean filter, as Git LFS installs, stores only a pointer in the index. The
-# commit hook reads the working copy of such a file, so a planted value in it is
-# still blocked. The filter is a local sed, so no LFS install and no network.
 def filtered_value(run: Run, project: Path, canary: str) -> list[str]:
     attributes = project / ".git/info/attributes"
     attributes.parent.mkdir(exist_ok=True)

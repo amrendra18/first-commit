@@ -35,7 +35,6 @@ class TagMessageTest(TemporaryRootTest):
     @needs_real_scanner
     def setUp(self) -> None:
         super().setUp()
-        # These pushes test the secret scans; test_pushed_signatures covers signing.
         unsigned = mock.patch(
             "first_commit.validation.unsigned_commit_findings", return_value=[]
         )

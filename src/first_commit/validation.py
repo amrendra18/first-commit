@@ -227,8 +227,6 @@ def _unseen(found: FindingCollector, findings: Iterable[Finding]) -> Iterator[Fi
             yield finding
 
 
-# Asks each document for as many findings as found holds: _unseen drops at most
-# that many.
 def _add_generated_no_commit_findings(
     found: FindingCollector, generated: LoadedCandidates
 ) -> None:
@@ -240,8 +238,6 @@ def _add_generated_no_commit_findings(
         )
 
 
-# A large clean-filter file, such as a Git LFS file, warns: before the working copy
-# was read, the hook checked only its small pointer and passed it.
 def _large_copy_findings(paths: Sequence[str], *, max_findings: int) -> list[Finding]:
     findings = (
         Finding(
@@ -438,10 +434,6 @@ def history(
     return found.result("history")
 
 
-# The pre-push history adds the signature check and the privacy rules on the files
-# of the pushed commits. The other checks read the push set (see PUSHED_REFS); the
-# signature check leaves out every configured remote's commits. The file versions
-# are counted first, so a push past their limit stops before any scan.
 def pushed_history(
     root: Path,
     policy: Policy,

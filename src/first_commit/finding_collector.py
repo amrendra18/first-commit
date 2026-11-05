@@ -18,9 +18,6 @@ def _sort_key(item: Finding) -> tuple[str, int, str]:
     return (item.path, item.line or 0, item.rule_id)
 
 
-# The cap limits what is shown; every finding added counts for pass or fail, as an
-# error always takes the place of a warning. One finding more than the cap is held,
-# so a run that stops early has left a finding out and the result says so.
 class FindingCollector:
     def __init__(self, cap: int) -> None:
         self.cap = cap
@@ -31,7 +28,6 @@ class FindingCollector:
     def items(self) -> list[Finding]:
         return self._kept.items
 
-    # The budget of each check: warnings held take no room from its errors.
     @property
     def room(self) -> int:
         return self._kept.room - self._kept.errors
@@ -72,7 +68,6 @@ def too_large_findings(paths: Sequence[str], *, max_findings: int) -> list[Findi
     return capped(findings, max_findings)
 
 
-# An oversized document is present; its files.too-large finding names it.
 def required_document_findings(
     documents: Mapping[str, Candidate], oversized: Collection[str]
 ) -> Iterator[Finding]:

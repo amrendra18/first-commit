@@ -8,7 +8,6 @@ from pathlib import Path
 from tests.support import TemporaryRootTest, initialize_repository, run_git
 
 SOURCE = Path(__file__).resolve().parents[1] / "src"
-# Gitleaks' place: the fake writes its report, says where, and waits to be stopped.
 SLOW_SCANNER = """#!/bin/sh
 for argument; do
   case $argument in --report-path=*) report=${argument#--report-path=} ;; esac
@@ -23,7 +22,6 @@ import signal
 import sys
 from unittest.mock import patch
 sys.path.insert(0, {str(SOURCE)!r})
-# As under nohup: the run starts with SIGHUP ignored.
 if sys.argv[3:] == ["ignore-hangup"]:
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
 from first_commit import cli, gitleaks
@@ -58,8 +56,6 @@ class StoppedCheckTest(TemporaryRootTest):
         run_git(self.repository, "add", "--", ".repo-policy.json")
         self.scanner = self.root / "gitleaks"
         self.slow_scanner(20)
-        # A run that a signal ends without cleanup leaves its report folder; TMPDIR
-        # keeps such a folder inside root.
         temporary = self.root / "tmp"
         temporary.mkdir()
         self.environment = {**os.environ, "TMPDIR": str(temporary)}

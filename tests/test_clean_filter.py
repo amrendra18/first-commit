@@ -139,9 +139,6 @@ class CleanFilterTest(unittest.TestCase):
             self.staged_rules()
 
     def test_an_oversized_working_copy_warns_and_does_not_block(self) -> None:
-        # A large Git LFS file is common; before the working copy was read, the
-        # hook passed its small pointer, so a large copy warns and blocks nothing.
-        # The pointer line (44 bytes) fits the limit; the working copy does not.
         self.stage("data.dat", b"x" * 64 + b"\n")
         self.policy = replace(self.policy, max_file_bytes=50)
 

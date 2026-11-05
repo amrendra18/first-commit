@@ -10,7 +10,6 @@ SKILL_DESCRIPTION = (
     "and starter files, or when staged files, commit messages, or pushes need a check for secrets "
     "and private data before they leave the machine."
 )
-# The skill prints these for an agent that adopts first-commit in a project.
 AGENT_RULES = (
     (
         "Preview first with `first-commit setup --dry-run`. Review each conflict and "
@@ -63,7 +62,6 @@ SETUP_WRITES = (
     "cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private "
     "temporary folders, removed on exit."
 )
-# The Effects: words name the first host of each download; this names the rest.
 NETWORK = (
     "Network access to github.com and pypi.org, and to the hosts their downloads "
     "redirect to: a githubusercontent.com host for the Gitleaks release, and "
@@ -92,8 +90,6 @@ class VerbHelp:
 
 
 READ_ONLY = VerbHelp("nothing.", "nothing.", ("reads",))
-# Keyed by the words after first-commit. A group, such as hook, may do whatever its
-# stages do, so its effects come from theirs.
 HELP = {
     "version": READ_ONLY,
     "check": VerbHelp(CHECK_WRITES, f"run it inside {CHECK_BEFORE}", CHECKS),
@@ -175,9 +171,6 @@ def epilog(path: str) -> str:
     return "\n".join((*lines, "", exit_codes(found.codes)))
 
 
-# Each line of a description or epilog wraps on its own, so the Writes:, Before:,
-# Effects:, and Exit codes: lines keep their starts. An Effects: line never wraps: a
-# reader takes the verb's effects from that one line.
 class Formatter(argparse.HelpFormatter):
     def _fill_text(self, text: str, width: int, indent: str) -> str:
         return "\n".join(
@@ -195,13 +188,11 @@ class Formatter(argparse.HelpFormatter):
         )
 
 
-# argparse has no public way to list a parser's options or subcommands, so only these
-# two functions read its private fields.
 def subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
     return {
         name: child
-        for action in parser._actions  # noqa: SLF001 - argparse internals, see above
-        if isinstance(action, argparse._SubParsersAction)  # noqa: SLF001 - see above
+        for action in parser._actions  # noqa: SLF001
+        if isinstance(action, argparse._SubParsersAction)  # noqa: SLF001
         for name, child in action.choices.items()
     }
 
@@ -209,7 +200,7 @@ def subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentP
 def option_actions(parser: argparse.ArgumentParser) -> list[argparse.Action]:
     return [
         action
-        for action in parser._actions  # noqa: SLF001 - see above
+        for action in parser._actions  # noqa: SLF001
         if not isinstance(action, argparse._SubParsersAction)  # noqa: SLF001
     ]
 

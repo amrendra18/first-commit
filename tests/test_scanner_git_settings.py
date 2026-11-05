@@ -24,12 +24,6 @@ from tests.support import initialize_repository, run_git
 
 LIMITS = (100, 1024 * 1024)
 ATTRIBUTES = "{attributes}"
-# Each user setting that changes what Git prints to Gitleaks, as a global
-# configuration file. On Git 2.39.5, color.ui, color.diff, log.showRoot,
-# core.bigFileThreshold, and core.attributesFile hid the planted key, or the
-# commits that hold it, before first-commit fixed them. The other five hid nothing
-# there (Gitleaks 8.30.0 reads those prefixes and formats, and diff.srcPrefix
-# needs Git 2.45); they guard against another Git or Gitleaks version.
 USER_SETTINGS = {
     "color.ui": "[color]\n\tui = always\n",
     "color.diff": "[color]\n\tdiff = always\n",
@@ -64,8 +58,6 @@ class ScannerGitSettingsTest(unittest.TestCase):
         self.root = self.scratch / "repository"
         self.root.mkdir()
         initialize_repository(self.root)
-        # Git drops GIT_CONFIG_GLOBAL from first-commit's children, so the user's
-        # file is the one under XDG_CONFIG_HOME, as on a real machine.
         self.config = self.scratch / "xdg/git/config"
         self.config.parent.mkdir(parents=True)
         self.config.write_text("", encoding="utf-8")

@@ -164,8 +164,6 @@ class BoundedReadTest(RepositoryTest):
         one = self.processes()
         self.stage_files(6)
 
-        # ls-files, two reads of .gitleaksignore, one batch-check, one batch read,
-        # and one read of the clean-filter settings.
         self.assertEqual(6, one)
         self.assertEqual(6, self.processes())
 

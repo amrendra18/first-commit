@@ -29,8 +29,6 @@ def readme_remove_block() -> str:
     return section.split("```sh\n", 1)[1].split("```", 1)[0]
 
 
-# A project may keep its own hook file without default_install_hook_types; setup
-# then installs each hook type by name. Remove must still delete every script.
 def _drop_default_hook_types(target: Path) -> bool:
     path = target / HOOK_FILE
     lines = path.read_text("utf-8").splitlines(keepends=True)

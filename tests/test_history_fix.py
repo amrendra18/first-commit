@@ -69,7 +69,6 @@ class HistoryFixTest(unittest.TestCase):
         (root / "config.txt").write_text("one\n", encoding="utf-8")
         commit_fixture(root, "config.txt")
         head = _head(root)
-        # An editor that keeps the todo list as written runs the rebase unattended.
         environment = {**os.environ, "GIT_SEQUENCE_EDITOR": "true"}
 
         def rebase(*arguments: str) -> int:

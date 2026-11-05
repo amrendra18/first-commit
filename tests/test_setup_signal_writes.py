@@ -14,10 +14,6 @@ from first_commit.models import SetupTerminatedError
 from first_commit.setup import SetupRequest, setup_repository
 from tests.setup_support import REVISION, SetupFixture
 
-# Each write setup makes before it installs the hook tools, with how many times
-# setup calls it in this fixture: the documents and hook-file proposals, the
-# contributor record, the private values list and the trust file, and each Git
-# setting.
 WRITES: dict[str, tuple[Callable[..., object], int]] = {
     "create_exclusive": (paths.create_exclusive, 7),
     "create_contributor": (create_contributor, 1),

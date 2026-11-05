@@ -159,8 +159,6 @@ class FixesTest(unittest.TestCase):
                 self.assertTrue(fix.startswith(f"Run {trust} to write "), fix)
                 self.assertNotIn("--unset", fix)
 
-    # A message that keeps the template lines has its sections, so the fix names
-    # the lines to replace.
     def test_the_sections_fix_names_each_template_placeholder(self) -> None:
         for fixes in (HOOK_FIXES, TOOL_FIXES):
             fix = fixes["message.sections"]

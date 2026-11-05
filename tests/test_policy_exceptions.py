@@ -181,7 +181,6 @@ class GithubOwnerSegmentTest(unittest.TestCase):
         self.assertNotIn(value, repr(findings))
         return [f.line for f in findings if f.rule_id == "privacy.private-literal"]
 
-    # GitHub owner names have at most 39 characters.
     def test_a_value_anywhere_inside_the_owner_segment_is_exempt(self) -> None:
         for content in (
             b"https://github.com/" + b"x" * 27 + b"privateowner/tool\n",

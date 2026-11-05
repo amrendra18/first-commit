@@ -166,8 +166,6 @@ def _finding(
 
 
 # A blob over the byte limit is not read: the staged check reports it as too large.
-# A clean-filter file is also read from its working copy; the staged check reports
-# a copy that is too large or cannot be read.
 def scan_hidden_staged(
     root: Path,
     paths: Sequence[str],

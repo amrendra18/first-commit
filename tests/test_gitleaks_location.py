@@ -381,7 +381,6 @@ class GitleaksLocationTest(unittest.TestCase):
             root = Path(directory)
             with (
                 recorded_report_folders() as timed_out,
-                # The commit count runs Git first; this test fakes only Gitleaks.
                 mock.patch("first_commit.gitleaks._listed_commits", return_value=0),
                 mock.patch(
                     "first_commit.gitleaks_scanner.subprocess.run",

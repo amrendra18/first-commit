@@ -163,7 +163,6 @@ def _clone_setup_lines(*, setup_hook: bool) -> tuple[str, str]:
     return f"{SETUP_HOOK_COMMAND}\n", explanation
 
 
-# Local hooks have no setup hook: first-commit setup installs the Git hooks too.
 INSTALLED_ONBOARDING = (
     "Commits and pushes run pre-commit hooks.\n"
     "They run the `first-commit` command on your PATH.\n"
@@ -194,7 +193,6 @@ def _pinned_onboarding(source: str, *, setup_hook: bool) -> str:
     )
 
 
-# Names no commit: an upgrade changes the commit in the hook file only.
 def _onboarding_section(
     heading: str,
     source: str,

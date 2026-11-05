@@ -7,10 +7,6 @@ KEPT_LIST = "privacy/terms.txt"
 MASKED_FINDING = 'text.trailing-whitespace "privacy/<private value>-notes.txt"'
 
 
-# The user-level list links to a file the project tracks: its home repository.
-# Its values block nothing there but still mask output, so the first commit is
-# blocked only by trailing whitespace in a file named with a value. The second
-# commit passes and is undone, so later journeys see the history unchanged.
 def home_repository(run: Run, project: Path, canary: str, user_list: str) -> list[str]:
     link = Path(run.environment["HOME"]) / user_list
     kept = project / KEPT_LIST

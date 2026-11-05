@@ -369,7 +369,6 @@ class StashTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        # These pushes test the secret scans; test_pushed_signatures covers signing.
         unsigned = mock.patch(
             "first_commit.validation.unsigned_commit_findings", return_value=[]
         )

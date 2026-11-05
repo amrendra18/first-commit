@@ -107,7 +107,6 @@ class MetadataTest(unittest.TestCase):
             ],
             [(entry["path"], entry["line"]) for entry in exceptions],
         )
-        # The check matches by digest, so a moved line would still pass there.
         for entry in exceptions:
             with self.subTest(path=entry["path"]):
                 lines = (self.root / entry["path"]).read_bytes().split(b"\n")
@@ -243,8 +242,6 @@ class MetadataTest(unittest.TestCase):
         )
         positions = [readme.index(step) for step in steps]
         self.assertEqual(sorted(positions), positions)
-        # The install block puts the command on PATH, so no step names the tool
-        # folder or a variable that holds its path.
         tool_path = (
             r"/bin/first-commit (setup|check|doctor|hook)|\$FIRST_COMMIT\b"
             r"|\bFIRST_COMMIT="

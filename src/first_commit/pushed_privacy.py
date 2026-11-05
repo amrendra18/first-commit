@@ -78,7 +78,6 @@ def _result(meta: bytes) -> tuple[str, str]:
     return fields[parents], fields[2 * parents + 1]
 
 
-# Each file version once, with the oldest commit that adds it: parents come first.
 def _versions(root: Path, commits: Sequence[str]) -> list[_Version]:
     names = "".join(commit + "\n" for commit in commits).encode("ascii")
     fields = iter(run_git(root, DIFF_TREE, names).split(b"\0"))
@@ -105,10 +104,6 @@ def _short(commit: str) -> str:
     return commit[:SHORT_COMMIT]
 
 
-# Each commit's own policy approves its lines, as the staged policy does at commit
-# time: an approval only in the working copy is not in what the push sends. A commit
-# whose policy is no valid file gets no exceptions, so a later fix of the policy
-# never leaves an older commit unpushable.
 def _commit_rules(
     root: Path, policy: Policy, private_values: Sequence[str], commits: Sequence[str]
 ) -> dict[str, _Rules]:
@@ -169,9 +164,6 @@ class _Scan(NamedTuple):
     max_findings: int
 
 
-# Blobs are read in batch order, not commit order, so each rule, path, and line keeps
-# only the finding of its oldest version, the commit to rewrite; memory grows with
-# the distinct keys, not with the versions. A blob over the byte limit is never read.
 def _findings(scan: _Scan) -> Iterator[Finding]:
     blobs = list(dict.fromkeys(version.blob for version in scan.versions))
     sizes = object_sizes(scan.root, blobs, "blob", None, "File")
@@ -181,7 +173,6 @@ def _findings(scan: _Scan) -> Iterator[Finding]:
         key = (item.rule_id, item.path, item.line)
         held = oldest.get(key)
         if held is None or index < held[0]:
-            # Moved to the end, so one commit's findings keep the order they came in.
             oldest.pop(key, None)
             oldest[key] = (index, item)
 
@@ -213,9 +204,6 @@ def _commit_versions(
     return _versions(root, commits) if commits else []
 
 
-# Past the limit on the whole push set (see PUSHED_REFS), the pushed ref alone is
-# read when it fits, so pushing the older commits first gets through; the other refs
-# of the same push are then not read (ARCHITECTURE.md, Known gaps).
 def pushed_versions(
     root: Path, scope: PushedScope | None, max_files: int
 ) -> list[_Version]:
@@ -225,8 +213,6 @@ def pushed_versions(
         versions = _commit_versions(root, scope, every_ref=False)
     if len(versions) <= max_files:
         return versions
-    # Without a pushed ref, as in a run by hand or a first push that sends HEAD or
-    # a short commit id, nothing narrower can be read.
     fix = (
         f"push the older commits first, {PARTIAL_PUSH} for a commit part way "
         "along, then push the rest."

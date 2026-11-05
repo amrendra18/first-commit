@@ -16,13 +16,10 @@ SIGNATURE_HEADERS = (b"gpgsig ", b"gpgsig-sha256 ")
 COMMITTER_TIME = re.compile(rb"committer .* (\d{1,18}) [+-]\d{4}")
 
 
-# The commits of the push's revisions, parents before their children, so the first
-# finding is the oldest commit.
 def pushed_commits(root: Path, revisions: tuple[str, ...]) -> list[str]:
     return listed_commits(root, ("--reverse", "--topo-order", *revisions, "--"))
 
 
-# The headers end at the first empty line; a continuation line starts with a space.
 def _signed(content: bytes) -> bool:
     header = content.partition(b"\n\n")[0]
     return any(line.startswith(SIGNATURE_HEADERS) for line in header.split(b"\n"))

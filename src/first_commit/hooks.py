@@ -228,9 +228,6 @@ def _runs_only_at(stages: object, stage: str) -> bool:
     )
 
 
-# bin/first-commit names a file in the repository, so it runs first-commit's checks
-# only in the checkout whose code is running; anywhere else, repository content
-# would choose the program.
 def own_checkout(root: Path) -> bool:
     try:
         return root.samefile(Path(__file__).resolve().parents[2])
@@ -357,8 +354,6 @@ def runs_installed_command(entries: list[HookEntry]) -> bool:
     return False
 
 
-# Security rule 4, as for Git, curl, and Gitleaks. The message names only the path
-# inside the repository, never the repository's own location.
 def installed_command_problem(root: Path) -> str | None:
     program = find_executable(INSTALLED_COMMAND)
     if program is None:

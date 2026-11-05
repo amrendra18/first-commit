@@ -51,9 +51,6 @@ HEADER = (
     *(f"  - {stage}\n" for stage in HOOK_TYPES),
     "repos:\n",
 )
-# The installed form: each hook's id, name, first-commit command, and its one stage,
-# in the shape hooks.py accepts for a local hook. Verbose hooks show their output
-# when they pass.
 LOCAL_HOOKS = (
     (HOOK_IDS["pre-commit"], "staged hygiene", "hook pre-commit", "pre-commit", False),
     (

@@ -46,7 +46,6 @@ def create_local_file(root: Path, relative: str, content: bytes, label: str) -> 
     return path
 
 
-# False when the file changed since setup wrote it, so it was left as it is.
 def restore_git_config(path: Path, expected: bytes, original: bytes | None) -> bool:
     if read_if_present(path) != expected:
         return False

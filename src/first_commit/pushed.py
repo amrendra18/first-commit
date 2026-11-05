@@ -9,14 +9,8 @@ from first_commit.models import GIT_CONFIG_PATH, Finding, Severity
 
 # A remote name as one argument: no spaces, glob characters, or leading -.
 REMOTE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}")
-# A local branch by its full name. The characters leave out every option and
-# revision syntax but "..", which is refused on its own.
 LOCAL_BRANCH = re.compile(r"refs/heads/[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}")
 HISTORY_REVISIONS = ("--exclude=refs/stash", "--all")
-# The push set, which the secret, message, and file checks read (see
-# push_revisions): the commits on the pushed ref, every local branch, and every
-# remote-tracking branch, less those the push's remote holds. The signature check
-# reads less: it leaves out every configured remote's commits (signature_revisions).
 # pre-commit names only the first pushed ref, and a push may send another remote's
 # tracking branch as a later ref, as git push public private/feature:feature does.
 # Any other ref, such as a tag, the stash, notes, refs/original/ backups, or
@@ -30,8 +24,6 @@ PUSHED_REFS = ("--branches", "--remotes")
 MAX_REVISION_BYTES = 64 * 1024
 
 
-# check --new-only reads only the commits no configured remote's tracking branches
-# hold, the same commits check only warns about.
 class HistoryRange(Enum):
     NEW_ONLY = "new-only"
 
@@ -42,8 +34,6 @@ def _pushed_ref(value: str) -> bool:
     )
 
 
-# to_ref is a full commit id, or a local branch that push_revisions reads as its
-# commit.
 class PushedScope(NamedTuple):
     to_ref: str | None
     remote: str | None
@@ -56,7 +46,6 @@ class PushedScope(NamedTuple):
         )
 
 
-# A run with no pushed ref and no remote, as by hand: every local ref.
 NO_SCOPE = PushedScope(None, None)
 
 
@@ -74,7 +63,6 @@ def pushed_scope(environment: Mapping[str, str]) -> PushedScope:
     return PushedScope(to_ref, remote if REMOTE_NAME.fullmatch(remote) else None)
 
 
-# Each check reads a branch's commit when it starts, as Git reads PUSHED_REFS.
 def _pushed(root: Path, scope: PushedScope) -> tuple[str, ...]:
     ref = scope.to_ref
     if ref is None:
@@ -104,7 +92,6 @@ def remote_patterns(root: Path) -> tuple[str, ...]:
     return tuple(f"--remotes={name}" for name in configured_remotes(root))
 
 
-# None when the list of remotes to leave out is too long for one argument.
 def new_revisions(root: Path) -> tuple[str, ...] | None:
     excluded = remote_patterns(root)
     if not excluded:
@@ -156,11 +143,7 @@ def _any_case(name: str) -> str:
     return "".join(f"[{c.lower()}{c.upper()}]" if c.isalpha() else c for c in name)
 
 
-# The refs of the configured remote the push goes to, as --remotes=<remote>. Refs of
-# a remote <remote>/<more>, in any case, are left out: the push keeps their commits.
-# Git matches these --exclude patterns against the ref name after refs/remotes/. A
-# remote whose name differs only in case may share the refs, and a nested name that
-# is not a plain remote name cannot be written as a pattern; then nothing is left out.
+# Git matches these --exclude patterns against the ref name after refs/remotes/.
 def _remote_held(root: Path, remote: str | None) -> tuple[str, ...]:
     if remote is None:
         return ()
@@ -174,9 +157,6 @@ def _remote_held(root: Path, remote: str | None) -> tuple[str, ...]:
     return ("--not", *excluded, f"--remotes={remote}")
 
 
-# The push set (see PUSHED_REFS); without every_ref, the pushed ref's commits alone.
-# No reflogs: an amended-away secret stays there up to 90 days and would block
-# pushes.
 def push_revisions(
     root: Path, scope: PushedScope, *, every_ref: bool = True
 ) -> tuple[str, ...]:
@@ -185,10 +165,6 @@ def push_revisions(
     return (*pushed, *refs, *_remote_held(root, scope.remote))
 
 
-# The signature check leaves out every configured remote's commits: a commit another
-# remote holds, such as a fork's fetched upstream history, is someone else's to sign.
-# The secret and privacy checks still read it when the push's remote lacks it. A ref
-# of no configured remote leaves nothing out, as in _remote_held.
 def signature_revisions(root: Path, scope: PushedScope) -> tuple[str, ...]:
     pushed = _pushed(root, scope)
     excluded = remote_patterns(root)

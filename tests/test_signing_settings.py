@@ -11,8 +11,6 @@ from tests.support import commit_message, initialize_repository, run_git
 from tests.validation_support import IDENTITY, commit_identity
 
 APPROVED = (IDENTITY["user.email"],)
-# Each signing or identity setting the commit hooks require, the rule that reports
-# it, and the values that turn it off. None means the setting is missing.
 OFF_VALUES = (None, "", "false", "no", "off", "0")
 REQUIRED = (
     ("commit.gpgsign", "git.signed-commits", OFF_VALUES),

@@ -36,16 +36,12 @@ SETUP_ROOT_HELP = (
 )
 
 
-# prog names the command whose help lists the accepted arguments.
 class ArgumentError(ValueError):
     def __init__(self, message: str, prog: str = PROGRAM) -> None:
         super().__init__(message)
         self.prog = prog
 
 
-# Read before parsing, so a call that fails to parse still answers in JSON. Only the
-# --format option counts, never a positional value that happens to be json; the last
-# one wins, as in argparse.
 def json_requested(arguments: Sequence[str]) -> bool:
     words = list(arguments)
     chosen = None
@@ -212,7 +208,6 @@ def build_parser() -> Parser:
         allow_abbrev=False,
         formatter_class=Formatter,
     )
-    # parse answers --version before this parser runs; the option is here for the help.
     parser.add_argument("--version", action="store_true", help=VERSION_HELP)
     commands = parser.add_subparsers(
         dest="command", metavar="COMMAND", required=True, parser_class=Parser
@@ -272,7 +267,6 @@ def _accepted_flags(parser: argparse.ArgumentParser, verbs: Sequence[str]) -> st
     )
 
 
-# prog names the command whose help lists the flags; name is what the call ran.
 def _unaccepted(
     prog: str, name: str, arguments: Sequence[str], extra: str, flags: str
 ) -> ArgumentError:

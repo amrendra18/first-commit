@@ -37,9 +37,6 @@ def _attribute_values(
     }
 
 
-# Each options tuple is one attribute source, such as () for the working copy's
-# .gitattributes or ("--cached",) for the staged ones; a path counts when any names
-# one of the drivers.
 def paths_with_driver(
     root: Path,
     paths: Sequence[str],

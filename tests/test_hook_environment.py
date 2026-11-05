@@ -122,7 +122,6 @@ class HookEnvironmentTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GIT_ICASE_PATHSPECS": "1"}):
             self.assertEqual(b"a.txt\n", git.run_git(self.real, literal))
 
-    # The GIT_CONFIG_* variables that stay are first-commit's own pinned settings.
     def test_product_git_environment_drops_repository_variables(self) -> None:
         caller = repository_values(self.real)
         selected = sanitized_git_environment(caller)

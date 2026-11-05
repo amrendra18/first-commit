@@ -52,7 +52,6 @@ def _approving_policy(path: str, line: int) -> str:
 class PushedPrivacyTest(TemporaryRootTest):
     def setUp(self) -> None:
         super().setUp()
-        # test_pushed_signatures covers signing; these commits are unsigned.
         unsigned = mock.patch(
             "first_commit.validation.unsigned_commit_findings", return_value=[]
         )

@@ -43,8 +43,6 @@ class UserList(Enum):
     KEPT = "kept"
 
 
-# In the repository that keeps the user list, its values still mask output but
-# are not checked.
 @dataclass(frozen=True)
 class PrivateValues:
     checked: tuple[str, ...]
@@ -94,18 +92,12 @@ def user_values_path(environment: Mapping[str, str] | None = None) -> Path:
     return config_folder(environment) / USER_VALUES_NAME
 
 
-# Names the user-level list without the home folder, which may hold a private value.
 def user_values_label(environment: Mapping[str, str] | None = None) -> str:
     values = os.environ if environment is None else environment
     base = "$XDG_CONFIG_HOME" if xdg_config_home(values) else "~/.config"
     return f"{base}/first-commit/{USER_VALUES_NAME}"
 
 
-# The user-level list may link to a file kept elsewhere, such as a versioned copy.
-# A checkout can reset that file's mode, so a broad mode is fixed or reported,
-# never a reason to stop. The repository that tracks the list holds its values by
-# design, so there the list is still read and checked, and its values mask
-# output, but they block nothing.
 def _user_values(worktrees: Sequence[Path]) -> tuple[tuple[str, ...], bool]:
     path = user_values_path()
     if not os.path.lexists(path):
@@ -130,9 +122,6 @@ def _worktrees(root: Path) -> tuple[Path, ...]:
     return (root,) if main is None else (root, main)
 
 
-# Only a file in a worktree's index counts: a nested repository, a submodule's
-# file, or an untracked or ignored file is not kept by that worktree. The checked
-# worktree is asked with a hook's index; the main worktree with its own.
 def _kept_in(path: Path, worktrees: Sequence[Path]) -> Path | None:
     resolved = Path(os.path.realpath(path))
     for worktree, ask in zip(worktrees, (run_git, run_git_own_index), strict=False):
@@ -146,8 +135,6 @@ def _kept_in(path: Path, worktrees: Sequence[Path]) -> Path | None:
     return None
 
 
-# The path was resolved before the open; the open file must still be the file
-# at that path, so a link changed between the two steps applies the list.
 def _same_file(path: Path, opened: os.stat_result) -> bool:
     try:
         current = path.lstat()
@@ -156,8 +143,6 @@ def _same_file(path: Path, opened: os.stat_result) -> bool:
     return (current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino)
 
 
-# Setup names the user list with the same rule as check; no repository yet
-# means none can keep it.
 def user_list_state(root: Path | None) -> UserList:
     path = user_values_path()
     if not os.path.lexists(path):
@@ -179,8 +164,6 @@ def _not_regular(label: str) -> PrivateValuesError:
     )
 
 
-# One open file serves the type check, the mode change, and the read, so a link
-# changed between those steps cannot point any of them at another file.
 def _read_user_list(path: Path, label: str) -> tuple[os.stat_result, bytes]:
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
     try:

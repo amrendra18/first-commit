@@ -14,21 +14,16 @@ def _flat(text: str) -> str:
 
 
 class ReadmeWordingTest(unittest.TestCase):
-    # The header line of .gitmessage is a placeholder too: kept as it is, it fails
-    # the message.header rule.
     def test_first_commit_says_to_replace_every_template_placeholder(self) -> None:
         start = _flat(README.split("Git opens the template", 1)[1].split("```", 1)[0])
         self.assertIn("Replace each `<...>` placeholder with your own text", start)
         self.assertNotIn("Keep", start)
 
-    # Setup writes the trust file only when it is missing, so the recovery removes
-    # the old one and the next setup with --trust-self trusts the new key.
     def test_identity_recovery_removes_the_old_self_trust(self) -> None:
         step = README.split("**Wrong identity or key.**", 1)[1].split("\n5. ", 1)[0]
         self.assertIn(f"rm -f {ALLOWED_SIGNERS_PATH}\n", step)
         self.assertIn("--trust-self", step)
 
-    # No reader can look up a contract that the repository does not publish.
     def test_public_documents_cite_no_unpublished_contract(self) -> None:
         for name, text in (
             ("README.md", README),

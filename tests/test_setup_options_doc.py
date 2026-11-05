@@ -7,7 +7,6 @@ from first_commit.arguments import ArgumentError, parse
 ARCHITECTURE = Path(__file__).resolve().parents[1] / "ARCHITECTURE.md"
 ACCEPTS = re.compile(r"it accepts (?P<flags>[^.]+)\.")
 ROW = re.compile(r"^\| `(?P<option>--[a-z-]+)", re.MULTILINE)
-# The Commands section documents these for setup, check, and doctor together.
 SHARED = {"-h", "--help", "--root", "--format"}
 
 

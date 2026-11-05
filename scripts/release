@@ -96,7 +96,6 @@ if [[ -z "$tagged" ]]; then
   printf '\nCreate the signed tag; it stays on this machine until step 3:\n\n'
   printf "  git tag -s %s -m 'first-commit %s' %s\n" "$tag" "$version" "$commit"
 fi
-# CI runs on pushes to main, so the tag waits for a green run on this exact commit.
 printf '\nThen release in this order:\n\n1. Push the branch:\n\n  git push origin %s\n' \
   "$branch"
 if [[ "$branch" != main ]]; then

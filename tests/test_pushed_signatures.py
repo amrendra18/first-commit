@@ -96,7 +96,6 @@ class PushedSignatureTest(TemporaryRootTest):
         _commit(self.repository, "feat: side work")
         run_git(self.repository, "switch", "-q", "main")
         run_git(self.repository, "merge", "-q", "--no-edit", *options, "side")
-        # A local branch would keep the old commits in the push range after a rebase.
         run_git(self.repository, "branch", "-q", "-d", "side")
         return _head(self.repository)
 
@@ -116,8 +115,6 @@ class PushedSignatureTest(TemporaryRootTest):
         )
         self.assertEqual([unsigned[:12], merge[:12]], reported)
         self.assertNotIn(signed[:12], output)
-        # A merge follows the first one, so the fix leaves its re-creation to the
-        # person: a rebase would flatten the merge.
         self.assertIn("After a merge, re-create those commits by hand", output)
 
     @needs_real_scanner
@@ -144,7 +141,6 @@ class PushedSignatureTest(TemporaryRootTest):
     def test_the_printed_amend_signs_the_newest_commit(self) -> None:
         pushed_base_commit(self.repository)
         self.sign_commits()
-        # An amend of an empty commit needs --allow-empty; a real commit has a change.
         (self.repository / "change.txt").write_text("change\n", "utf-8")
         run_git(self.repository, "add", "change.txt")
         _commit(self.repository, "feat: unsigned", "--no-gpg-sign")

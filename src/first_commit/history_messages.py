@@ -118,7 +118,6 @@ def _remote_commits(root: Path) -> frozenset[str]:
 class MessageScope(NamedTuple):
     pushed: PushedScope | None
     warn_on_remote: bool = False
-    # The commits to read when pushed is None.
     revisions: tuple[str, ...] = HISTORY_REVISIONS
 
 
@@ -140,8 +139,6 @@ def _named(
     )
 
 
-# Reads on past warnings, such as findings in commits a remote holds, so a later
-# error still decides; it stops once kept holds only errors.
 def _message_findings(
     scan: _MessageScan,
     kind: _MessageKind,

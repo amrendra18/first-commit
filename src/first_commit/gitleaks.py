@@ -161,8 +161,6 @@ def _text_commits(root: Path, revisions: tuple[str, ...]) -> int:
     return len(commits)
 
 
-# Counted before the scan, so a commit made during it can only raise Gitleaks' count.
-# None means Git could not list the commits; only a clean scan needs the count.
 def _listed_commits(root: Path, revisions: tuple[str, ...]) -> int | None:
     try:
         return _text_commits(root, revisions)

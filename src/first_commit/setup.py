@@ -137,7 +137,6 @@ def _preflight_source(root: Path, source: str) -> None:
         ) from error
     if not result.returncode:
         return
-    # Most HTTPS failures are a missing network, so that comes before the SSH route.
     if source == HTTPS_REPOSITORY:
         raise DependencyError(
             f"Hook source preflight: Git exited {result.returncode} for {source}.\n"
@@ -185,10 +184,7 @@ def _repository_exists(root: Path) -> bool:
     return True
 
 
-# The outer root is masked with its private values, as check masks a root. A list
-# that cannot be read cannot mask it, so then the message names Git's answer.
 def _inside_another_repository(found: Path) -> SetupError:
-    # The cd names no path, so it runs as printed even where the mask hides a value.
     change = 'cd "$(git rev-parse --show-toplevel)"'
     try:
         values = load_private_values(found, PRIVATE_VALUES_PATH).masked

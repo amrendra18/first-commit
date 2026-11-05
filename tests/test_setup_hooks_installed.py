@@ -59,7 +59,6 @@ PINNED_TODAY = (
 TRACKED = (HOOK_CONFIG, ".repo-policy.json", ".gitignore", ".gitmessage")
 
 
-# Setup looks up Git only to run the hook source preflight, `git ls-remote`.
 @contextmanager
 def no_network(form: str) -> Iterator[None]:
     with patch(
@@ -91,7 +90,6 @@ class InstalledFixture(SetupFixture):
             )
         )
 
-    # No scanner in the project, so doctor and check use the pinned one on PATH.
     def install_scanner(self, _root: Path) -> bool:
         return False
 

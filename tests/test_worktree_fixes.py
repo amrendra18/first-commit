@@ -57,8 +57,6 @@ class LinkedWorktreeFixTest(unittest.TestCase):
             f"Next action: commit from the main worktree at {UNNAMED_MAIN_WORKTREE}",
             output,
         )
-        # Doctor loads no private values, so the main worktree's path, which may
-        # hold one, is never printed.
         self.assertNotIn(str(self.main), output)
 
     def test_check_masks_a_private_value_in_the_main_worktree_path(self) -> None:

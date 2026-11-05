@@ -49,9 +49,6 @@ def _inside(path: Path, top: Path) -> str | None:
     )
 
 
-# An absolute PATH entry inside the repository lets repository content choose the
-# program, as a relative entry would. The path as given and its resolved target
-# both count, so a link inside the repository that points out is still inside.
 def path_inside_repository(program: str, start: Path) -> str | None:
     top = _repository_top(start)
     if top is None:

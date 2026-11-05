@@ -193,15 +193,11 @@ def _over_limit(root: Path, path: str, max_bytes: int) -> bool:
     return (stat.S_ISREG(kind) or stat.S_ISLNK(kind)) and metadata.st_size > max_bytes
 
 
-# The caller masks private values in the path, then escapes its other control
-# characters; a line break is escaped here, so a file name cannot start a fake
-# fix: line. No private value holds a line break, so the mask still finds it.
 def _unreadable(path: str, error: PathError) -> str:
     path = path.replace("\n", "\\x0a").replace("\r", "\\x0d")
     text = f'"{path}": {error}'
     if not isinstance(error.__cause__, PermissionError):
         return text
-    # The ./ keeps a path that starts with - from being read as an option.
     quoted = shlex.quote("./" + path)
     return (
         f"{text}\nfix: run `ls -l {quoted}` to see its owner and mode, make it "
@@ -269,8 +265,6 @@ def environment_files(
     )
 
 
-# Each name is an object id that must answer as kind. max_bytes covers the whole
-# object, headers and signature included; None sets no limit.
 def object_sizes(
     root: Path, names: Sequence[str], kind: str, max_bytes: int | None, label: str
 ) -> dict[str, int]:
@@ -418,8 +412,6 @@ class FilteredCandidates:
     unreadable: list[str]
 
 
-# Unreadable: the working copy is missing or is not a regular file, so the bytes the
-# filter read are gone.
 def filtered_candidates(
     root: Path, paths: Sequence[str], max_bytes: int
 ) -> FilteredCandidates:

@@ -16,7 +16,6 @@ DOCTOR_SCOPE = "doctor"
 SETUP_RECOVERY_RULES = frozenset((*SETUP_RULES, *CONTRIBUTOR_RULES))
 
 
-# main_worktree is set only in a linked worktree, where setup refuses to run.
 def next_action_line(
     result: Result, *, setup_hook: bool = True, main_worktree: str | None = None
 ) -> str | None:
@@ -88,7 +87,6 @@ def print_json(payload: Mapping[str, object]) -> None:
     print(_dumps(_versioned(payload)))
 
 
-# No schema_version wrapper: a caller reads the object's own keys alone.
 def print_object(value: Mapping[str, object]) -> None:
     print(_dumps(value))
 

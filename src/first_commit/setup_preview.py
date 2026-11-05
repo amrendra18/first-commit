@@ -39,8 +39,6 @@ def _step(label: str, *, needed: bool, dry_run: bool, verbs: tuple[str, str]) ->
     return f"{label}: {verbs[0] if dry_run else verbs[1]}"
 
 
-# Without --trust-self, setup keeps a setting whose file is gone, as after the README
-# recovery from a wrong key, so no signature verifies.
 def _missing_signers(plan: SetupPlan) -> str | None:
     if plan.git.trust is not None or not plan.git.trust_configured:
         return None

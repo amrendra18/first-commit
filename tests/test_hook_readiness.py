@@ -8,8 +8,6 @@ from tests.test_hooks import generated_hook
 
 
 class HookReadinessTest(unittest.TestCase):
-    # Git skips a hook without the execute bit, so the commit and push checks would
-    # not run.
     def test_a_generated_hook_without_the_execute_bit_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

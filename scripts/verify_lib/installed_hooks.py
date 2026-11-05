@@ -10,7 +10,6 @@ from verify_lib.core import (
     require,
 )
 
-# Runs the snapshot with the harness Python, so the hooks find this tool on PATH.
 WRAPPER = '#!/bin/sh\nPYTHONPATH={source} exec {python} -P -m first_commit.cli "$@"\n'
 DOCTOR_HOOK = "pre-commit run first-commit-doctor --hook-stage manual"
 
@@ -32,13 +31,11 @@ def _installed_tool(run: Run) -> tuple[str, dict[str, str]]:
         **IDENTITY,
         PATH=f"{folder}:{run.environment.get('PATH', '')}",
         FIRST_COMMIT_SIGNING_KEY=run.environment["VERIFY_KEY"] + ".pub",
-        # Later features expect no saved identity in the harness HOME.
         FIRST_COMMIT_IDENTITY_FILE=str(run.work / "installed-identity.json"),
     )
     return str(tool), environment
 
 
-# The scanner comes from the setup feature's project, so setup downloads nothing.
 def installed_form_journey(run: Run) -> list[str]:
     tool, environment = _installed_tool(run)
     project = run.work / "installed-project"

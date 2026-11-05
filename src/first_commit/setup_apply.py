@@ -153,9 +153,6 @@ def signals_held() -> Iterator[list[int]]:
         yield received
 
 
-# A change and its entry in the undo list are one step: a signal waits until both are
-# done, so the rollback knows each change and the undone message stays true. Ctrl-C
-# in a terminal also stops a Git child, so its failure is reported as the stop.
 @contextmanager
 def _recorded() -> Iterator[list[int]]:
     with signals_held() as received:
@@ -287,7 +284,6 @@ def _set_git_setting(applied: _Applied, arguments: tuple[str, ...]) -> None:
         else applied.plan.git.git_config
     )
     if read_if_present(git_config) != expected:
-        # The message names the kept file, so the rollback leaves it unreported.
         applied.configured = None
         raise SetupBlockedError(
             f"{GIT_CONFIG_PATH} changed while setup ran, so setup stopped and left "
@@ -299,9 +295,6 @@ def _set_git_setting(applied: _Applied, arguments: tuple[str, ...]) -> None:
         try:
             run_git(applied.plan.root, ("config", "--local", *arguments))
         except SETUP_FAILURES:
-            # Ctrl-C in a terminal may stop setup's Git after it wrote the file. Any
-            # other failure keeps the earlier record, so a file another process wrote
-            # in the meantime is never taken for setup's own.
             if received:
                 applied.configured = read_if_present(git_config)
             raise
@@ -322,9 +315,6 @@ def _install_tools(applied: _Applied, progress: Progress) -> None:
     plan = applied.plan
     root = plan.root
     target = root / LOCAL_SCANNER_PATH
-    # A scanner that appeared after planning is not setup's to roll back. Whether the
-    # path was free is recorded first: a signal may land after the link and before
-    # the stat, and only a file that was not there before can be setup's.
     if plan.install_scanner:
         applied.scanner_absent = not os.path.lexists(target)
         try:
@@ -335,7 +325,6 @@ def _install_tools(applied: _Applied, progress: Progress) -> None:
         if installed:
             applied.scanner = target.stat()
         else:
-            # Another process put a scanner there first; it is not setup's.
             applied.scanner_absent = False
     run_pre_commit(
         root,

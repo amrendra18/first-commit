@@ -66,7 +66,6 @@ def _declare_fix(identifier: str) -> str:
     )
 
 
-# The repo: local shape of Hook file rules 4, for a project that declares local hooks.
 LOCAL_DECLARE_FIXES = {
     f"hooks.{name}-check": (
         f"Declare first-commit-{name} once as a repo: local hook with entry "
@@ -242,7 +241,6 @@ WORKTREE_FIX = (
 )
 
 
-# A linked worktree keeps a .git file; a .git link or folder is never one.
 def linked_main_worktree(root: Path) -> Path | None:
     git_file = root / ".git"
     if git_file.is_symlink() or not git_file.is_file():
@@ -287,7 +285,6 @@ MESSAGE_CHANGES = {
         f"{IGNORE_PATH} does not apply to it"
     ),
 }
-# A secret in a commit stays in the history after a later commit removes it.
 HISTORY_SECRET_FIX = (
     "Revoke the secret, then remove it from commit {commit}: git rebase -i "
     "{commit}^ when that commit is not pushed (git rebase -i --root when it is the "
@@ -296,9 +293,6 @@ HISTORY_SECRET_FIX = (
     f"<commit>:<path>:<rule>:<line> entry in a tracked {IGNORE_PATH} "
     "(ARCHITECTURE.md in first-commit, Gitleaks exceptions)."
 )
-# A rebase re-creates every commit from the named one on, and --gpg-sign signs each.
-# It flattens merges, which can drop a change made in a merge commit and would sign
-# commits a merge brought in, so a history with merges is left to the person.
 UNSIGNED_COMMIT_FIX = (
     "Sign commit {commit} on each local branch that holds it (git branch --contains "
     "{commit} lists them). On a branch where it is the newest commit, switch to "
@@ -308,8 +302,6 @@ UNSIGNED_COMMIT_FIX = (
     "--root when it is the first commit). After a merge, re-create those commits "
     "by hand: a rebase can drop a change made in a merge commit. Then push again."
 )
-# A file version stays in its commit after a later commit removes it, so the
-# change goes in that commit, and an approval in that commit's own policy.
 PUSHED_FILE_FIX = (
     " Make the change in commit {commit} itself, on each local branch that holds it "
     "(git branch --contains {commit} lists them): switch to that branch, run git "
@@ -318,13 +310,10 @@ PUSHED_FILE_FIX = (
     "follows it, re-create those commits by hand: a rebase drops merges. Then push "
     "again. A later commit that deletes the line leaves it in {commit}."
 )
-# The remote-tracking refs can be older than the remote, as in a fork never fetched,
-# so a push can read a commit the remote already holds.
 FETCH_FIRST = (
     " When the remote already holds commit {commit}, run git fetch <remote>, then "
     "push again."
 )
-# Setup writes a proposal beside a document that exists, to merge by hand.
 PROPOSAL_SUFFIX = proposal_name("")
 PROPOSAL_FIX = "Merge this proposal into {document}, then delete the proposal."
 PUSHED_FILE_RULES = frozenset(
@@ -381,7 +370,6 @@ def _commit_fix(finding: Finding) -> str | None:
     return fix + FETCH_FIRST.format(commit=commit) if finding.pushed else fix
 
 
-# main_worktree is set only in a linked worktree, masked as the caller masks paths.
 def fix_for(
     finding: Finding, *, setup_hook: bool = True, main_worktree: str | None = None
 ) -> str | None:

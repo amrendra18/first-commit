@@ -33,7 +33,6 @@ from first_commit.setup_command import declares_setup_hook, setup_command
 
 MAX_POLICY_BYTES = MEBIBYTE
 REQUIRED_DOCUMENTS = ("README.md", "AGENTS.md")
-# The order of the table in ARCHITECTURE.md "Project policy file".
 FIELDS = (
     "schema_version",
     "public_emails",
@@ -99,7 +98,6 @@ def _policy_data(raw: bytes) -> dict[str, Any]:
 def parse_policy(
     raw: bytes, root: Path, contributor: Contributor | None = None
 ) -> Policy:
-    # The fix names only the tool's own fields: an unknown name may be private.
     try:
         return _parsed_policy(raw, root, contributor)
     except PolicyError as error:

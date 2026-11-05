@@ -475,7 +475,6 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(ExitCode.INPUT, code)
         error_object = json.loads(output)["error"]
         self.assertEqual("invalid-arguments", error_object["code"])
-        # The next command must itself run: the top help, never `--version --help`.
         self.assertEqual(1, len(error_object["next"]))
         self.assertTrue(error_object["next"][0].endswith("first-commit --help"))
         self.assertNotIn(CANARY, output)

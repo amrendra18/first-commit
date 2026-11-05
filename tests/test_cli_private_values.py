@@ -317,7 +317,6 @@ class UserPrivateValuesCliTest(UserListFixture):
         )
         self.assertEqual("", self.assert_blocked())
 
-    # The mode is read and changed through the one open file, never by its path.
     def test_the_user_list_mode_changes_through_the_open_file(self) -> None:
         target = self.config / "master-list.txt"
         self.write_user_list(target, 0o744)

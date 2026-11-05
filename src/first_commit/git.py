@@ -58,7 +58,6 @@ BATCH_CHECK_ANSWER = re.compile(
 )
 BATCH_CHECK_MISSING = b" missing"
 INCONSISTENT_ANSWER = "Git returned an inconsistent object."
-# The characters of an object id that messages and findings show.
 SHORT_COMMIT = 12
 INDEX_FILE = "GIT_INDEX_FILE"
 UNTRUSTED_GIT_ENVIRONMENT = {
@@ -69,7 +68,6 @@ UNTRUSTED_GIT_ENVIRONMENT = {
     "GIT_CURL_VERBOSE",
     "GIT_DIR",
     "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-    # These change what a pathspec matches, so a listing could miss a file.
     "GIT_GLOB_PATHSPECS",
     "GIT_ICASE_PATHSPECS",
     INDEX_FILE,
@@ -122,9 +120,6 @@ GIT_MISSING = (
 GIT_STATUS_FIX = (
     "fix: run `git status` in this repository to see Git's own error, then rerun."
 )
-# run_git checks GIT_INDEX_FILE against the Git folders; this cache saves a rev-parse
-# per Git call while it is set, as in a commit hook. The size of 16 only bounds the
-# memory of a process that checks many repositories, such as the test suite.
 _GIT_FOLDERS: dict[Path, tuple[Path, Path]] = {}
 
 
@@ -433,7 +428,6 @@ def batch_check(root: Path, names: Sequence[str]) -> list[ObjectInfo | None]:
     return parse_batch_check(raw, len(names))
 
 
-# A caller ends its revisions with "--"; a path after it is read literally.
 def listed_commits(root: Path, arguments: Sequence[str]) -> list[str]:
     raw = run_git(root, ("--literal-pathspecs", "rev-list", *arguments))
     commits = raw.decode("ascii").split()
@@ -447,7 +441,6 @@ def is_tracked(root: Path, relative_path: str) -> bool:
 
 
 # Git lists the main worktree first; a bare main repository has none.
-# The list is split on newlines, so a worktree path holding a newline is misread.
 def main_worktree(root: Path) -> Path | None:
     first = run_git(root, ("worktree", "list", "--porcelain")).split(b"\n\n")[0]
     lines = first.split(b"\n")

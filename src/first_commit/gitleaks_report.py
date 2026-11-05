@@ -20,7 +20,6 @@ MAX_REPORT_PATH_CHARS = 4096
 MAX_REPORT_LINE = 1 << 31
 RULE = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 # The only fields read: the rule matches .gitleaksignore entries and is never shown.
-# The commit id of a history finding is not matched content.
 REPORT_FIELDS: tuple[str, ...] = ("RuleID", "File", "StartLine", "Commit")
 
 

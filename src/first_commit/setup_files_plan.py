@@ -66,8 +66,6 @@ LOCAL_NOT_IGNORED = (
 )
 
 
-# source is an approved address for pinned hooks, or LOCAL_REPOSITORY for hooks that
-# run the installed command.
 @dataclass(frozen=True)
 class SetupOptions:
     revision: str | None

@@ -99,7 +99,6 @@ class ErrorCauseTest(CliFixture):
     def test_a_git_command_over_its_time_limit_is_a_limit_exceeded_error(
         self,
     ) -> None:
-        # Git cannot answer within a microsecond, so its first command times out.
         with patch("first_commit.git.GIT_TIMEOUT_SECONDS", 0.000001):
             code, value = self.error_object("check")
         self.assertEqual((1, "limit-exceeded"), (code, value["code"]))

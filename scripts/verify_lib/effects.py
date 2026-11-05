@@ -166,7 +166,6 @@ def feature_preview_matches_apply(run: Run) -> list[str]:
     separate, _ = preview_setup(run, nested)
     return [
         *proofs,
-        # The driver calls setup in process, so the refusal ends it with a traceback.
         blocked(inside, "the dry run in an empty folder inside that repository"),
         require(
             condition="inside the Git repository at" in refusal
