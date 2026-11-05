@@ -75,7 +75,9 @@ def project_without_setup_hook(run: Run, name: str, hooks: str) -> Path:
 def prove_fix_line(
     run: Run, project: Path, environment: Mapping[str, str], case: str
 ) -> list[str]:
-    code, _ = setup_journey(run, project, preflight=False, transport="https")
+    code, _ = setup_journey(
+        run, project, preflight=False, transport="https", environment=environment
+    )
     exited(code, 0, f"{case}: setup in a project with its own hook file")
     remove_markers(project)
     run.command(["git", "add", "-A"], project, expect=0)

@@ -28,7 +28,14 @@ from first_commit.git import GitError, run_git
 from first_commit.git_settings import local_git_settings
 from first_commit.gitleaks_scanner import LOCAL_SCANNER_PATH, DependencyError
 from first_commit.hooks import HOOK_TYPES, hook_findings
-from first_commit.models import GIT_CONFIG_PATH, GIT_HOOKS_PATH, SetupError
+from first_commit.models import (
+    GIT_CONFIG_PATH,
+    GIT_HOOKS_PATH,
+    SetupBlockedError,
+    SetupError,
+    SetupFailedError,
+    SetupTerminatedError,
+)
 from first_commit.paths import create_exclusive
 from first_commit.policy import POLICY_PATH, PRIVATE_VALUES_PATH, parse_policy
 from first_commit.policy_fields import PolicyError
@@ -40,6 +47,7 @@ from first_commit.setup_files import (
     restore_git_config,
 )
 from first_commit.setup_files_plan import TEMPLATE_PATH
+from first_commit.setup_installed_command import verify_installed_command
 from first_commit.setup_plan import (
     RepositoryState,
     SetupPlan,
@@ -68,10 +76,6 @@ SETUP_LOCK_NAME = "first-commit-setup.lock"
 TERMINATING_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
 HELD_SIGNALS = (*TERMINATING_SIGNALS, signal.SIGINT)
 Result = TypeVar("Result")
-
-
-class SetupTerminatedError(SetupError):
-    pass
 
 
 def terminated_error(number: int) -> SetupTerminatedError:
@@ -173,20 +177,22 @@ def setup_lock(root: Path) -> Iterator[None]:
             0o600,
         )
     except OSError as error:
-        raise SetupError("Setup lock could not be acquired safely.") from error
+        raise SetupBlockedError("Setup lock could not be acquired safely.") from error
     try:
         regular = stat.S_ISREG(os.fstat(descriptor).st_mode)
         if regular:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as error:
         os.close(descriptor)
-        raise SetupError("Another first-commit setup is already running.") from error
+        raise SetupBlockedError(
+            "Another first-commit setup is already running."
+        ) from error
     except OSError as error:
         os.close(descriptor)
-        raise SetupError("Setup lock could not be acquired safely.") from error
+        raise SetupBlockedError("Setup lock could not be acquired safely.") from error
     if not regular:
         os.close(descriptor)
-        raise SetupError(
+        raise SetupBlockedError(
             f"The setup lock .git/{SETUP_LOCK_NAME} is not a regular file, so setup "
             "cannot run; setup changed nothing.\n"
             f"fix: run `ls -ld .git/{SETUP_LOCK_NAME}` to see what it is; if nothing "
@@ -249,7 +255,7 @@ def _set_git_setting(applied: _Applied, arguments: tuple[str, ...]) -> None:
         else applied.plan.git.git_config
     )
     if read_if_present(git_config) != expected:
-        raise SetupError(
+        raise SetupBlockedError(
             f"{GIT_CONFIG_PATH} changed while setup ran, so setup stopped and left "
             "the file as it is.\n"
             "fix: run `git config --local --list` to review the settings, then rerun "
@@ -305,16 +311,19 @@ def _install_tools(applied: _Applied, progress: Progress) -> None:
 
 def _verify(root: Path, contributor: Contributor) -> None:
     if hook_findings(root) or template_findings(root):
-        raise SetupError("Installed hooks or template failed readiness verification.")
+        raise SetupFailedError(
+            "Installed hooks or template failed readiness verification."
+        )
+    verify_installed_command(root)
     policy = read_if_present(root / POLICY_PATH)
     if policy is None:
-        raise SetupError("The policy file was removed during setup; restore it.")
+        raise SetupFailedError("The policy file was removed during setup; restore it.")
     parse_policy(policy, root, contributor)
     settings = local_git_settings(root, IDENTITY_KEYS)
     if identity_findings(settings, (contributor.email,)) or contributor_findings(
         contributor, settings
     ):
-        raise SetupError("Local identity/signing settings failed verification.")
+        raise SetupFailedError("Local identity/signing settings failed verification.")
 
 
 def _same_file(current: os.stat_result, installed: os.stat_result) -> bool:
@@ -383,7 +392,7 @@ def apply_plan(
         try:
             roll_back_applied(applied)
         except (OSError, SetupError) as error:
-            raise SetupError(
+            raise SetupFailedError(
                 "Setup recovery failed; inspect generated files and Git settings."
             ) from error
 

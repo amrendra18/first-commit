@@ -49,6 +49,10 @@ POLICY_NAME = f"The project policy file {POLICY_PATH}"
 PRIVATE_VALUES_PATH = ".local/first-commit/private-values.txt"
 
 
+class PolicyMissingError(PolicyError):
+    pass
+
+
 @dataclass(frozen=True)
 class Policy:
     environment_exceptions: tuple[EnvironmentExceptionEntry, ...]
@@ -127,17 +131,16 @@ def parse_policy(
 
 def _unreadable_policy(path: Path, root: Path) -> PolicyError:
     name = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-    if os.path.lexists(path):
-        reason = (
-            "cannot be read; make it a regular file of at most "
-            f"{MAX_POLICY_BYTES // MEBIBYTE} MiB"
-        )
-    else:
+    if not os.path.lexists(path):
         command = setup_command(setup_hook=declares_setup_hook(root))
-        reason = (
-            f'does not exist; run `{command}`, or create it as {{"schema_version": 1}}'
+        return PolicyMissingError(
+            f"The project policy file {name} does not exist.\nfix: run `{command}`, "
+            'or create it as {"schema_version": 1}.'
         )
-    return PolicyError(f"The project policy file {name} {reason}.")
+    return PolicyError(
+        f"The project policy file {name} cannot be read; make it a regular file of "
+        f"at most {MAX_POLICY_BYTES // MEBIBYTE} MiB."
+    )
 
 
 def load_policy(path: Path, root: Path) -> Policy:

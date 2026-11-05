@@ -168,18 +168,19 @@ def scan_history(
     max_findings: int,
     executable: str = "gitleaks",
     environment: Mapping[str, str] | None = None,
+    revisions: tuple[str, ...] = HISTORY_REVISIONS,
 ) -> tuple[Finding, ...]:
     return _scan(
         root,
         Scanner(executable, environment),
         ScanSpec(
             # Gitleaks splits --log-opts on spaces into git log arguments.
-            (*HISTORY_ARGUMENTS, "--log-opts=" + " ".join(HISTORY_REVISIONS)),
+            (*HISTORY_ARGUMENTS, "--log-opts=" + " ".join(revisions)),
             (str(root),),
             HISTORY_SCOPE_PATH,
             HISTORY_SUMMARY,
             HISTORY_TIMEOUT_SECONDS,
-            HISTORY_REVISIONS,
+            revisions,
         ),
         max_findings,
     )

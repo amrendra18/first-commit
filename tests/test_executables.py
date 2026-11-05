@@ -140,7 +140,7 @@ class AbsolutePathLookupTest(unittest.TestCase):
         with redirect_stdout(output), redirect_stderr(error):
             code = cli.main(("check",))
 
-        self.assertEqual(4, code)
+        self.assertEqual(1, code)
         self.assertTrue(
             error.getvalue().startswith("error: / is not inside a Git repository"),
             error.getvalue(),
@@ -204,7 +204,7 @@ class AbsolutePathLookupTest(unittest.TestCase):
 
         self.assertEqual(
             (
-                4,
+                1,
                 (
                     "error: Git is unavailable.\nfix: install Git, or put the "
                     "folder that holds it on PATH as an absolute path.\n"

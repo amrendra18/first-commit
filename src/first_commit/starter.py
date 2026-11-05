@@ -1,5 +1,5 @@
 from first_commit.generated_files import DOCUMENT_NAMES
-from first_commit.hooks import HTTPS_REPOSITORY, SSH_REPOSITORY
+from first_commit.hooks import HTTPS_REPOSITORY, LOCAL_REPOSITORY, SSH_REPOSITORY
 from first_commit.machine_identity import (
     EMAIL_VARIABLE,
     KEY_VARIABLE,
@@ -11,6 +11,7 @@ from first_commit.setup_command import (
     CHECK_HOOK_ID,
     HOOK_CONFIG,
     SETUP_HOOK_COMMAND,
+    TOOL_SETUP_COMMAND,
 )
 
 MARKER = "<!-- @no-commit -->\n"
@@ -162,17 +163,24 @@ def _clone_setup_lines(*, setup_hook: bool) -> tuple[str, str]:
     return f"{SETUP_HOOK_COMMAND}\n", explanation
 
 
-# Names no commit: an upgrade changes the commit in the hook file only.
-def _onboarding_section(
-    heading: str,
-    source: str,
-    *,
-    setup_hook: bool,
-    check_hook: bool,
-) -> str:
+# Local hooks have no setup hook: first-commit setup installs the Git hooks too.
+INSTALLED_ONBOARDING = (
+    "Commits and pushes run pre-commit hooks.\n"
+    "They run the `first-commit` command on your PATH.\n"
+    f"Install first-commit from `{HTTPS_REPOSITORY}` with its `setup` extra,\n"
+    "which brings pre-commit, as its README shows, then in each clone run:\n\n"
+    "```sh\n"
+    f"{TOOL_SETUP_COMMAND}\n"
+    "```\n\n"
+    "It sets this clone's Git identity and SSH signing, installs the Gitleaks\n"
+    "scanner and the Git hooks, and does not change files this project owns.\n"
+    "In a terminal it asks for your public identity once per machine.\n\n"
+)
+
+
+def _pinned_onboarding(source: str, *, setup_hook: bool) -> str:
     command, explanation = _clone_setup_lines(setup_hook=setup_hook)
-    section = (
-        f"## {heading}\n\n"
+    return (
         "Commits and pushes run pre-commit hooks.\n"
         f"They come from `{source}` at the commit `{HOOK_CONFIG}` pins.\n"
         "Install pre-commit on Python 3.11 to 3.14 with\n"
@@ -183,6 +191,21 @@ def _onboarding_section(
         f"{command}"
         "```\n\n"
         f"{explanation}"
+    )
+
+
+# Names no commit: an upgrade changes the commit in the hook file only.
+def _onboarding_section(
+    heading: str,
+    source: str,
+    *,
+    setup_hook: bool,
+    check_hook: bool,
+) -> str:
+    section = f"## {heading}\n\n" + (
+        INSTALLED_ONBOARDING
+        if source == LOCAL_REPOSITORY
+        else _pinned_onboarding(source, setup_hook=setup_hook)
     )
     if check_hook:
         section += f"Check this clone with `{CHECK_HOOK_COMMAND}`.\n\n"

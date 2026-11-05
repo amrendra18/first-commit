@@ -17,12 +17,9 @@ from first_commit.machine_identity import (
     NAME_VARIABLE,
     PATH_VARIABLE,
 )
+from first_commit.models import SetupTerminatedError
 from first_commit.setup import SetupRequest, setup_repository
-from first_commit.setup_apply import (
-    TERMINATING_SIGNALS,
-    SetupTerminatedError,
-    setup_lock,
-)
+from first_commit.setup_apply import TERMINATING_SIGNALS, setup_lock
 from first_commit.setup_files_plan import SetupOptions
 from first_commit.setup_plan import RepositoryState, SetupPlan, plan_setup
 from tests.setup_support import REVISION, SetupFixture
@@ -131,7 +128,7 @@ class SetupSignalTest(SetupFixture):
                 ("setup", "--yes", "--revision", REVISION, "--root", str(self.root))
             )
 
-        self.assertEqual((2, f"error: {CTRL_C_UNDONE}\n"), (code, error.getvalue()))
+        self.assertEqual((1, f"error: {CTRL_C_UNDONE}\n"), (code, error.getvalue()))
         self.assertNotIn("Traceback", output.getvalue())
         self.assertFalse((self.root / ".git").exists())
 

@@ -20,8 +20,8 @@ from first_commit.policy import Policy
 from first_commit.pushed import (
     HISTORY_REVISIONS,
     PushedScope,
-    configured_remotes,
     push_revisions,
+    remote_patterns,
 )
 
 SHORT_ID_CHARS = 12
@@ -133,10 +133,9 @@ def _tag_messages(
 
 def _remote_commits(root: Path) -> frozenset[str]:
     # A ref under refs/remotes/ of no configured remote may be stale or hand-made.
-    names = configured_remotes(root)
-    if not names:
+    patterns = remote_patterns(root)
+    if not patterns:
         return frozenset()
-    patterns = [f"--remotes={name}" for name in names]
     commits = run_git(root, ("rev-list", *patterns, "--")).decode("ascii").split()
     if any(OBJECT_ID.fullmatch(commit) is None for commit in commits):
         raise GitError("Git returned an invalid remote commit.")
@@ -146,6 +145,8 @@ def _remote_commits(root: Path) -> frozenset[str]:
 class MessageScope(NamedTuple):
     pushed: PushedScope | None
     warn_on_remote: bool = False
+    # The commits to read when pushed is None.
+    revisions: tuple[str, ...] = HISTORY_REVISIONS
 
 
 def _named(
@@ -207,7 +208,7 @@ def history_message_findings(
     max_findings: int,
 ) -> list[Finding]:
     pushed = scope.pushed
-    revisions = HISTORY_REVISIONS if pushed is None else push_revisions(root, pushed)
+    revisions = scope.revisions if pushed is None else push_revisions(root, pushed)
     max_bytes = policy.max_message_bytes
     # Only check warns about a commit the remote has; a tag can be re-created
     # without a history rewrite, so a tag finding always blocks.

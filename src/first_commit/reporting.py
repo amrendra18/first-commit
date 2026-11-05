@@ -1,5 +1,5 @@
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from first_commit import __version__
 from first_commit.fixes import CONTRIBUTOR_RULES, SETUP_RULES, fix_for
@@ -57,6 +57,15 @@ def json_value(result: Result, *, setup_hook: bool = True) -> dict[str, object]:
 
 def print_json(payload: Mapping[str, object]) -> None:
     print(_dumps(_versioned(payload)))
+
+
+# No schema_version wrapper: a caller reads the object's own keys alone.
+def print_object(value: Mapping[str, object]) -> None:
+    print(_dumps(value))
+
+
+def print_error(code: str, message: str, commands: Sequence[str]) -> None:
+    print_object({"error": {"code": code, "message": message, "next": list(commands)}})
 
 
 def render_human(result: Result, *, setup_hook: bool = True) -> str:

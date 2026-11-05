@@ -7,6 +7,7 @@ from collections.abc import Hashable, Mapping
 from pathlib import Path
 from typing import Any
 
+from first_commit.executables import find_executable, path_inside_repository
 from first_commit.git import GitError, git_path, run_git
 from first_commit.gitleaks_scanner import DependencyError
 from first_commit.models import GIT_HOOKS_PATH, Finding, SetupError, Severity
@@ -20,6 +21,8 @@ GITHUB_REPOSITORY = "amrendra18/first-commit"
 HTTPS_REPOSITORY = f"https://github.com/{GITHUB_REPOSITORY}"
 SSH_REPOSITORY = f"ssh://git@github.com/{GITHUB_REPOSITORY}"
 APPROVED_REPOSITORIES = (HTTPS_REPOSITORY, SSH_REPOSITORY)
+# pre-commit's own name for hooks declared in the project's hook file.
+LOCAL_REPOSITORY = "local"
 REVISION_CHARS = 40
 REVISION = re.compile(rf"[0-9a-f]{{{REVISION_CHARS}}}")
 HOOK_TYPES = ("pre-commit", "commit-msg", "pre-push")
@@ -32,6 +35,8 @@ MAX_YAML_TOKENS = 10000
 MALFORMED = "Hook configuration is malformed."
 PUSH_CHECK_RULE = "hooks.push-check"
 PUSH_REVISION_RULE = "hooks.push-revision"
+INSTALLED_COMMAND = "first-commit"
+INSTALLED_COMMAND_RULE = "hooks.installed-command"
 DECLARATION_RULES = {
     HOOK_IDS["pre-commit"]: "hooks.staged-check",
     HOOK_IDS["commit-msg"]: "hooks.message-check",
@@ -201,7 +206,10 @@ def hook_entries(data: Mapping[str, Any]) -> list[HookEntry]:
 
 def approved_source(repository: Mapping[str, Any]) -> bool:
     source = repository["repo"]
-    return source == "local" or source.removesuffix(".git") in APPROVED_REPOSITORIES
+    return (
+        source == LOCAL_REPOSITORY
+        or source.removesuffix(".git") in APPROVED_REPOSITORIES
+    )
 
 
 def _runs_only_at(stages: object, stage: str) -> bool:
@@ -229,7 +237,7 @@ def declaration_conflicts(
     repository: Mapping[str, Any], hook: Mapping[str, Any]
 ) -> bool:
     stage = next(key for key, value in HOOK_IDS.items() if value == hook["id"])
-    if repository["repo"] == "local":
+    if repository["repo"] == LOCAL_REPOSITORY:
         return _local_hook_conflicts(hook, stage)
     return bool(set(hook) - {"id", "stages"}) or (
         "stages" in hook and not _runs_only_at(hook["stages"], stage)
@@ -298,6 +306,45 @@ def _undeclared_rules(entries: list[HookEntry]) -> list[str]:
     return rules
 
 
+# A repo: local hook whose entry starts with the bare name runs the first-commit that
+# PATH finds; bin/first-commit names a file in the repository instead.
+def runs_installed_command(entries: list[HookEntry]) -> bool:
+    for repository, hook in entries:
+        entry = hook.get("entry")
+        if (
+            repository["repo"] == LOCAL_REPOSITORY
+            and isinstance(entry, str)
+            and entry.split()[:1] == [INSTALLED_COMMAND]
+        ):
+            return True
+    return False
+
+
+# Security rule 4, as for Git, curl, and Gitleaks. The message names only the path
+# inside the repository, never the repository's own location.
+def installed_command_problem(root: Path) -> str | None:
+    program = find_executable(INSTALLED_COMMAND)
+    if program is None:
+        return (
+            "PATH has no first-commit, so the repo: local hooks that run it fail "
+            "every commit."
+        )
+    inside = path_inside_repository(program, root)
+    if inside is not None:
+        return (
+            f"first-commit on PATH is {inside} inside this repository, so "
+            "repository content would choose the checks the hooks run."
+        )
+    return None
+
+
+def _installed_command_findings(root: Path, entries: list[HookEntry]) -> list[Finding]:
+    problem = runs_installed_command(entries) and installed_command_problem(root)
+    if not problem:
+        return []
+    return [Finding(rule_id=INSTALLED_COMMAND_RULE, path=HOOK_CONFIG, summary=problem)]
+
+
 def push_check_findings(root: Path) -> list[Finding]:
     return _hook_file_findings(root) + nested_remote_findings(root)
 
@@ -314,16 +361,22 @@ def _hook_file_findings(root: Path) -> list[Finding]:
     except DependencyError:
         return []
     except (PathError, SetupError):
+        entries = []
         rules = [*DECLARATION_RULES.values(), PUSH_CHECK_RULE]
     else:
         push_rule = _missing_push_rule(entries)
         rules = _undeclared_rules(entries) + ([push_rule] if push_rule else [])
+    local = any(
+        repository["repo"] == LOCAL_REPOSITORY and hook["id"] in HOOK_IDS.values()
+        for repository, hook in entries
+    )
     return [
         Finding(
             rule_id=rule,
             path=HOOK_CONFIG,
             summary=HOOK_FILE_SUMMARIES[rule],
             severity=Severity.WARNING,
+            local_hook=local,
         )
         for rule in rules
-    ]
+    ] + _installed_command_findings(root, entries)

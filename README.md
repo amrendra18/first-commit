@@ -5,36 +5,17 @@
 **Start a new Git project in one command, with hooks, signing, and starter
 files already in place.**
 
-Every new project needs the same groundwork: starter files, commit signing,
-Git hooks, and a secret scanner. first-commit sets it all up in one command.
-From then on, its hooks stop a secret, a private value, or an unsigned commit
-on your machine, before it becomes history.
+Its hooks then stop a secret, a private value, or an unsigned commit on your
+machine, before it becomes history.
 
-Install it into its own folder, then start a project:
+[Install](#install) it, then start a project:
 
 ```sh
-python3 -m venv /path/first-commit && /path/first-commit/bin/python -m pip install 'first-commit[setup] @ git+https://github.com/amrendra18/first-commit.git@v0.5.0'
-mkdir my-project && cd my-project && /path/first-commit/bin/first-commit setup
+mkdir my-project && cd my-project && first-commit setup
 ```
 
-Setup shows its plan and asks before it changes anything.
-`/path/first-commit` is any folder for the tool. Check the
+Setup shows its plan and asks before it changes anything. Check the
 [requirements](#requirements) first.
-
-## Contents
-
-1. [What it does](#what-it-does)
-2. [Requirements](#requirements)
-3. [Install](#install)
-4. [Start a project](#start-a-project)
-5. [Set up a clone](#set-up-a-clone)
-6. [Daily use](#daily-use)
-7. [Project settings](#project-settings)
-8. [Stop and recover](#stop-and-recover)
-9. [Upgrade](#upgrade)
-10. [Remove](#remove)
-11. [Learn more](#learn-more)
-12. [License and credits](#license-and-credits)
 
 ## What it does
 
@@ -63,65 +44,89 @@ repositories still need server-side rules; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 1. macOS or Linux, Git, and Python 3.11 to 3.14. On Windows, use WSL (Windows
-   Subsystem for Linux). Elsewhere, every command stops with exit 3.
+   Subsystem for Linux). Elsewhere, every command stops with exit 1.
 2. pre-commit 3.2.0 or newer, running on Python 3.11 to 3.14. Install it with
    `pipx install --python python3.13 pre-commit`, or `brew install pre-commit`
-   on macOS, and check it with `pre-commit --version`. Every clone needs it.
+   on macOS, and check it with `pre-commit --version`.
 3. An SSH signing key. Create one with `ssh-keygen -t ed25519`. GPG signing is
    not supported. Setup reads only the public key, the file ending in `.pub`.
 4. A public Git author name and email.
-5. Network access to GitHub, GitHub Releases, and a Python package index.
-6. At most 10,000 files, in a standard repository root (no linked worktree or
+5. At most 10,000 files, in a standard repository root (no linked worktree or
    submodule).
 
 ## Install
 
-The quick start installs release v0.5.0 over HTTPS. To check the release
-first, compare the commit SHA this prints with the
-[release page](https://github.com/amrendra18/first-commit/releases/tag/v0.5.0).
+To check the release first, compare the commit SHA this prints with the
+[release page](https://github.com/amrendra18/first-commit/releases/tag/v0.6.0).
 If they differ, do not install.
 
 ```sh
-git ls-remote https://github.com/amrendra18/first-commit 'v0.5.0^{}'
+git ls-remote https://github.com/amrendra18/first-commit 'v0.6.0^{}'
 ```
 
-To install over SSH, with an SSH key on your GitHub account:
+Add the `export` line to your shell profile too (`~/.zshrc` on macOS,
+`~/.profile` on Linux). Skip the `ln` line when the link exists.
 
 ```sh
-python3 -m venv /path/first-commit
-/path/first-commit/bin/python -m pip install \
-  'first-commit[setup] @ git+ssh://git@github.com/amrendra18/first-commit.git@v0.5.0'
+python3 -m venv ~/.local/share/first-commit
+~/.local/share/first-commit/bin/python -m pip install \
+  'first-commit[setup] @ git+https://github.com/amrendra18/first-commit.git@v0.6.0'
+mkdir -p ~/.local/bin
+ln -s ~/.local/share/first-commit/bin/first-commit ~/.local/bin/first-commit
+export PATH="$HOME/.local/bin:$PATH"
+first-commit --version
 ```
 
-The rest of this page calls the tool through a variable. Set it in each new
-shell:
+The last command prints `0.6.0`.
+
+Over SSH, with an SSH key on your GitHub account, use
+`'first-commit[setup] @ git+ssh://git@github.com/amrendra18/first-commit.git@v0.6.0'`
+in the `pip install` line.
+
+Optional: write the agent skill for Claude Code and Codex.
 
 ```sh
-FIRST_COMMIT=/path/first-commit/bin/first-commit
-"$FIRST_COMMIT" version
+mkdir -p ~/.claude/skills/first-commit ~/.codex/skills/first-commit
+first-commit help --format markdown > ~/.claude/skills/first-commit/SKILL.md
+first-commit help --format markdown > ~/.codex/skills/first-commit/SKILL.md
 ```
 
-The last command prints `0.5.0`. `--version` does the same.
+## What install writes
+
+1. Install writes the tool folder `~/.local/share/first-commit` and the link
+   `~/.local/bin/first-commit`. The skill lines write
+   `~/.claude/skills/first-commit` and `~/.codex/skills/first-commit`.
+2. Setup writes the project's files and local Git settings, and saves your
+   identity in `~/.config/first-commit/identity.json`
+   (`$XDG_CONFIG_HOME/first-commit/identity.json` when `XDG_CONFIG_HOME` is
+   set). That folder, first-commit's state folder, also holds your
+   [private-values list](#project-settings). Set `XDG_CONFIG_HOME` to move it,
+   or `FIRST_COMMIT_IDENTITY_FILE` to move the identity file alone.
+   pre-commit keeps its hook environments in its own cache.
+
+## Network use
+
+Install and setup use GitHub, GitHub Releases (for Gitleaks), and a Python
+package index. `check`, `doctor`, and the hooks are offline.
 
 ## Start a project
 
 ```sh
 mkdir my-project && cd my-project
-"$FIRST_COMMIT" setup --dry-run
-"$FIRST_COMMIT" setup
-"$FIRST_COMMIT" doctor
+first-commit setup --dry-run
+first-commit setup
+first-commit doctor
 ```
 
 1. The dry run prints the plan and changes nothing
    ([sample output](verify/features/first-run.md#proof)).
-2. Setup asks for your name, email, and public-key path, then asks before it
-   applies the plan (`--yes` skips the question). It saves your
-   identity for later clones on this machine and ends with
+2. Setup asks for your name, email, and public-key path, then asks before
+   applying the plan (`--yes` skips the question). It ends with
    `Verification: passed`. Other options are in
    [ARCHITECTURE.md](ARCHITECTURE.md#setup-options).
 3. The first `doctor` prints `WARN doctor` with
    `git.signature-verification-trust` and exits 0, because this checkout does
-   not trust your key yet. To trust it, run the command its `fix:` line prints:
+   not trust your key yet. To trust it, run its `fix:` command:
 
 ```sh
 FIRST_COMMIT_TRUST_SELF=1 pre-commit run first-commit-setup --hook-stage manual
@@ -170,18 +175,15 @@ pre-commit install
 pre-commit run first-commit-setup --hook-stage manual
 ```
 
-The second command sets the clone's identity and signing from the identity
-setup saved on this machine, and installs Gitleaks. Without a saved identity,
-it prints the command to run instead. Prefix it with
-`FIRST_COMMIT_TRUST_SELF=1` to trust your own key in the clone too.
+The second command sets the clone's identity and signing from your saved
+identity and installs Gitleaks; without one, it prints the command to run.
+Prefix it with `FIRST_COMMIT_TRUST_SELF=1` to trust your key too.
 
 ## Daily use
 
-To check on demand:
-
 ```sh
-"$FIRST_COMMIT" check   # working tree, staged files, and whole history
-"$FIRST_COMMIT" doctor  # identity, signing, hooks, and scanner
+first-commit check   # working tree, staged files, and whole history
+first-commit doctor  # identity, signing, hooks, and scanner
 ```
 
 In a clone, run them through pre-commit:
@@ -191,8 +193,8 @@ pre-commit run first-commit-check --hook-stage manual --all-files
 pre-commit run first-commit-doctor --hook-stage manual --all-files
 ```
 
-Both are offline and read-only
-([two exceptions](ARCHITECTURE.md#security-rules)). Add `--format json` for JSON.
+Both are read-only ([two exceptions](ARCHITECTURE.md#security-rules)). Add
+`--format json` for JSON.
 
 ## Project settings
 
@@ -210,11 +212,11 @@ Both are offline and read-only
 
 ## Stop and recover
 
-A failed setup undoes its changes, and each finding ends with a `fix:` line.
-For the rest:
+A failed setup undoes its changes. Other failures:
 
 1. **Install fails with `No matching distribution found`.** `python3` is
-   older than 3.11. Install again with `python3.13`.
+   older than 3.11. Delete `~/.local/share/first-commit`, then install again
+   with `python3.13`.
 2. **Clone setup or a commit fails with
    `No matching distribution found for setuptools`.** pre-commit runs on a
    Python older than 3.11. Run `python3 -m pip uninstall pre-commit`, then
@@ -225,9 +227,8 @@ For the rest:
    `.pre-commit-config.yaml`, see
    [Hook file rules](ARCHITECTURE.md#hook-file-rules).
 4. **Wrong identity or key.** Run the commands below in the checkout. Then
-   correct or delete `~/.config/first-commit/identity.json`
-   (`$XDG_CONFIG_HOME/first-commit/identity.json` when `XDG_CONFIG_HOME` is
-   set) and run setup again.
+   correct or delete the identity file from
+   [What install writes](#what-install-writes) and run setup again.
 
    ```sh
    rm .local/first-commit/contributor.json
@@ -243,7 +244,7 @@ For the rest:
    `$PRE_COMMIT_HOME/pre-commit.log`, or
    `$XDG_CACHE_HOME/pre-commit/pre-commit.log` when only `XDG_CACHE_HOME` is
    set. Check the hook URL and network access, then rerun setup.
-7. **Too many files.** `check` and the pre-push hook stop with exit 4 and
+7. **Too many files.** `check` and the pre-push hook stop with exit 1 and
    `File count exceeds the limit of 10,000 paths.` Add generated folders such
    as `node_modules/` to `.gitignore`, untrack them with
    `git rm -r --cached <folder>`, and retry.
@@ -253,7 +254,8 @@ For the rest:
 
 ## Upgrade
 
-1. Install the new tag into the tool folder, as in [Install](#install).
+1. Run the `pip install` line of [Install](#install) with the new tag, and
+   any skill lines you use; the link stays.
 2. In the project, run
    `pre-commit autoupdate --freeze --repo https://github.com/amrendra18/first-commit`.
    Use the address your `.pre-commit-config.yaml` names. It pins the new
@@ -264,8 +266,8 @@ For the rest:
 ## Remove
 
 To undo setup in one checkout, run the commands below. Check
-`git config --local --list` first, because the loop also removes values you
-set yourself.
+`git config --local --list` first; the loop also removes values you set
+yourself.
 
 ```sh
 pre-commit uninstall
@@ -279,17 +281,20 @@ rm -rf .local/first-commit .local/bin/gitleaks
 To stop using the hooks, delete the first-commit entry from
 `.pre-commit-config.yaml` and commit. When no setup is running, delete the
 lock file setup leaves with `rm .git/first-commit-setup.lock`. To remove the
-tool, delete its folder and the saved identity file from
-[Stop and recover](#stop-and-recover), item 4.
+tool, delete `~/.local/share/first-commit`, `~/.local/bin/first-commit`, the
+skill folders, and the state folder from
+[What install writes](#what-install-writes).
 
 ## Learn more
 
-1. [ARCHITECTURE.md](ARCHITECTURE.md): how it works, its security rules,
-   limits, output, and policy fields.
+1. [ARCHITECTURE.md](ARCHITECTURE.md): design, security rules, limits,
+   output, and policy fields.
 2. [verify/features](verify/features/README.md): what the end-to-end tests
    prove.
 3. [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and propose a change.
 4. [SECURITY.md](SECURITY.md): report a vulnerability.
+
+first-commit meets tool contract 1.1.
 
 ## License and credits
 

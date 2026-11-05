@@ -19,6 +19,8 @@ from verify_lib.core import (
     require,
     signed,
 )
+from verify_lib.home_journey import home_repository
+from verify_lib.installed_hooks import installed_form_journey
 
 CANARY = "verify-canary-private-name"
 USER_LIST = ".config/first-commit/private-values.txt"
@@ -131,6 +133,7 @@ def feature_setup(run: Run) -> list[str]:
             condition=SETUP_HOOK_COMMAND in readme,
             observed="starter README names the clone setup command",
         ),
+        *installed_form_journey(run),
     ]
 
 
@@ -210,7 +213,11 @@ def feature_privacy(run: Run) -> list[str]:
             run.command(["git", "reset", "-q", "--", name], project)
             (project / name).unlink(missing_ok=True)
         values.write_text(before, "utf-8")
-    return [*observed, *_user_list(run, project)]
+    return [
+        *observed,
+        *_user_list(run, project),
+        *home_repository(run, project, CANARY, USER_LIST),
+    ]
 
 
 # The canary is only in the user-level list, a link to a mode 644 file.

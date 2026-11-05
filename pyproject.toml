@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "first-commit"
-version = "0.5.0"
+version = "0.6.0"
 description = "One-shot repository starter with local Git hygiene checks"
 authors = [{ name = "Amrendra Kumar" }]
 readme = "README.md"

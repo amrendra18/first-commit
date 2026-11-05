@@ -346,7 +346,7 @@ class CommitIndexTest(TemporaryRootTest):
         for arguments in (("hook", "pre-commit"), ("hook", "pre-push"), ("check",)):
             with self.subTest(arguments=arguments):
                 code, output = self.run_cli(root, arguments, outside)
-                self.assertEqual(4, code, output)
+                self.assertEqual(1, code, output)
                 self.assertIn(
                     f"The first-commit {' '.join(arguments)} command refused to run",
                     output,

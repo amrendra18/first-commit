@@ -125,8 +125,9 @@ class ReleaseScriptTest(unittest.TestCase):
             "A missing version stops the release before the first check",
         ):
             self.assertIn(detail, " ".join(section.split()))
-        skill = (ROOT / ".agents/skills/first-commit/SKILL.md").read_text("utf-8")
-        self.assertIn("`scripts/release`", skill)
+        agents = " ".join((ROOT / "AGENTS.md").read_text("utf-8").split())
+        self.assertIn("run `scripts/release` and follow the release steps", agents)
+        self.assertIn("Never tag or push; report the printed commands", agents)
 
     def test_lint_finds_the_script_as_bash(self) -> None:
         self.assertEqual("#!/bin/bash", SCRIPT.read_text("utf-8").splitlines()[0])

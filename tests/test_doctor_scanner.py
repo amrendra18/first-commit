@@ -21,9 +21,9 @@ class MissingScannerTest(CliFixture):
         )
         self.assertIn('git.contributor-record ".local/first-commit', output)
 
-    def test_check_still_stops_with_exit_3_at_the_scan(self) -> None:
+    def test_check_still_stops_with_exit_1_at_the_scan(self) -> None:
         with patch.dict(os.environ, {"PATH": NO_SCANNER_PATH}):
             code, output, error = self.run_cli("check")
-        self.assertEqual(ExitCode.DEPENDENCY, code)
+        self.assertEqual(ExitCode.FINDING, code)
         self.assertIn("secrets.scanner-unavailable", output)
         self.assertIn("error: Gitleaks 8.30.0 is unavailable;", error)

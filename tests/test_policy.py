@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 from first_commit.contributor import Contributor, ContributorError
 from first_commit.models import Candidate, Origin
-from first_commit.policy import REQUIRED_DOCUMENTS, load_policy, parse_policy
+from first_commit.policy import (
+    REQUIRED_DOCUMENTS,
+    PolicyMissingError,
+    load_policy,
+    parse_policy,
+)
 from first_commit.policy_fields import PolicyError
 from tests.support import TemporaryRootTest
 from tests.validation_support import evaluate_candidates
@@ -307,8 +312,18 @@ class PolicyTest(TemporaryRootTest):
 
     def test_loader_names_a_missing_policy_and_keeps_the_record_cause(self) -> None:
         path = self.root / ".repo-policy.json"
-        with self.assertRaisesRegex(PolicyError, r"\.repo-policy\.json does not exist"):
+        with self.assertRaises(PolicyMissingError) as missing:
             load_policy(path, self.root)
+        self.assertEqual(
+            "The project policy file .repo-policy.json does not exist.\nfix: run "
+            '`first-commit setup`, or create it as {"schema_version": 1}.',
+            str(missing.exception),
+        )
+        path.symlink_to(self.root / "missing")
+        with self.assertRaises(PolicyError) as unreadable:
+            load_policy(path, self.root)
+        self.assertNotIsInstance(unreadable.exception, PolicyMissingError)
+        path.unlink()
         path.write_text('{"schema_version":1}\n', encoding="utf-8")
         with patch(
             "first_commit.policy.load_contributor",

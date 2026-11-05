@@ -7,7 +7,7 @@
   "private_literal_exceptions": [
     {
       "path": "README.md",
-      "line": 296,
+      "line": 301,
       "sha256": "6c44ba9f2a981c3ddc4ae159896c68867ff43db42cfb5d616b43b6fa97723835",
       "reason": "The README's copyright line names the copyright holder."
     },
@@ -19,7 +19,7 @@
     },
     {
       "path": "src/first_commit/hooks.py",
-      "line": 19,
+      "line": 20,
       "sha256": "46d3399072edb8c8c56af51d1e10b8db6d660c7773afc18ac683ce606c751d69",
       "reason": "The hook source is the owner's public first-commit repository on GitHub."
     }

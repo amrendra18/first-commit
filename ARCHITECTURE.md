@@ -24,7 +24,7 @@ All modules live in `src/first_commit/`.
 
 | Part | Modules | Job |
 | --- | --- | --- |
-| Commands | `cli.py`, `arguments.py`, `models.py`, `fixes.py`, `reporting.py`, `json_values.py` | Grammar, help, exit codes, fix lines, output |
+| Commands | `cli.py`, `arguments.py`, `help_text.py`, `models.py`, `fixes.py`, `reporting.py`, `json_values.py` | Grammar, help, exit codes, fix lines, output |
 | Setup | `setup*.py` apart from `setup_trust.py`, `pre_commit_runner.py`, `scanner_install.py`, `starter.py`, `generated_files.py`, `git_settings.py` | Plan, preview, apply, and roll back |
 | Identity | `contributor.py`, `machine_identity.py`, `setup_trust.py` | Contributor record, saved identity, opt-in trust |
 | Validation | `validation.py`, `candidates.py`, `finding_collector.py`, `characters.py`, `checks/` | Read what to check and run the rules |
@@ -75,7 +75,9 @@ Every command keeps these rules. Changing one is a design change.
    (such as Git or curl refused inside the repository) is not masked.
    Private-key contents are never read, and key comments are dropped.
 4. Git, curl, and Gitleaks run by absolute path, found in absolute `PATH`
-   folders outside the repository. The one copy accepted inside it is
+   folders outside the repository. Setup and `doctor` hold the `first-commit`
+   that installed-form hooks run (Hook file rules 7) to the same lookup. The one
+   copy accepted inside it is
    `.local/bin/gitleaks`: untracked, a regular file, and equal to the pinned
    SHA-256, checked before every scan. In a folder that is not yet a
    repository, setup runs the Git it finds, even one inside the folder, until
@@ -84,8 +86,11 @@ Every command keeps these rules. Changing one is a design change.
    replacement, or partial-clone fetches. Relative `PATH` entries are dropped.
 5. Paths are normalized and confined before reading. Reads, file counts,
    findings, and messages are bounded; see [Limits](#limits).
-6. Hooks are pinned to a 40-character commit SHA. Setup refuses a tag, because
-   a tag can move, and names `pre-commit autoupdate --freeze`.
+6. Pinned hooks, the default, are pinned to a 40-character commit SHA. Setup
+   refuses a tag, because a tag can move, and names
+   `pre-commit autoupdate --freeze`. Installed-form hooks (`--hooks installed`)
+   pin nothing: they run the `first-commit` on `PATH`, so the installed version
+   decides which checks run.
 7. Gitleaks 8.30.0 is pinned by version; a downloaded or `.local/bin` copy
    also by SHA-256. It is calibrated before use and run with redaction.
    Repository files cannot weaken it. `gitleaks stdin` runs in an empty folder
@@ -117,14 +122,26 @@ Every command keeps these rules. Changing one is a design change.
 | Command | What it does |
 | --- | --- |
 | `first-commit setup` | Plans and applies the one-time setup |
-| `first-commit check` | Checks the working tree, the staged files, and the whole history |
+| `first-commit check` | Checks the working tree, the staged files, and the whole history; `--new-only` checks only the commits no configured remote holds |
 | `first-commit doctor` | Checks the identity, signing, hooks, and scanner of this checkout |
 | `first-commit version` | Prints the installed version; `--version` does the same |
 | `first-commit hook <stage>` | Runs one Git hook stage; the installed Git hooks call it |
+| `first-commit help` | Prints the help; `--format json` or `--format markdown` prints every verb's help |
+
+Each verb's `--help` ends with `Writes:`, `Before:`, `Effects:`, and the exit
+codes that verb can return; `help_text.py` holds these fields. `help --format
+json` prints `verbs` and `commands`, and `help --format markdown` prints the
+same content with front matter and the agent rules. That output is the shipped
+skill, `skills/first-commit/SKILL.md`. `version --format json` and `--version
+--format json` print `version`, `revision` (the commit pip installed, or null),
+and `modified` (null). `help` and `version` read no state and start no process.
 
 `setup`, `check`, and `doctor` take `--root <folder>` and `--format json`. In a
 clone, pre-commit runs them from the pinned hooks: `first-commit-setup`,
 `first-commit-check`, and `first-commit-doctor`, all at `--hook-stage manual`.
+In the installed form, `first-commit-check` and `first-commit-doctor` are
+`repo: local` hooks that run the `first-commit` on `PATH`, and a clone runs
+`first-commit setup` itself.
 `--all-files` lets `check` see the working tree. A hook file without the check
 and doctor hooks can add `- id: first-commit-check` and
 `- id: first-commit-doctor` under the first-commit repository, with a `rev`
@@ -152,6 +169,7 @@ Give the same options to `setup --dry-run` and to `setup`.
 | `--yes` | Applies the plan without asking |
 | `--docs full` | Also creates `PRD.md`, `CONTRIBUTING.md`, and `SECURITY.md` |
 | `--license apache-2.0` | Also creates `LICENSE`, even on a later run |
+| `--hooks installed` | New hooks run the `first-commit` command on `PATH` as `repo: local` hooks, with no `rev` and no setup hook (Hook file rules 7); takes no `--transport` or `--revision`. Default: `pinned` |
 | `--transport ssh` | New hooks use the SSH address instead of HTTPS |
 | `--revision <sha>` | The hooks' commit, for an install without Git revision metadata; a project's own hook file supplies it otherwise |
 | `--trust-self` | Trusts your own key, as security rule 9 says |
@@ -169,7 +187,8 @@ none exists, and only in a terminal; the clone setup hook never asks.
 3. The signing-key path must name a readable SSH public-key file ending in
    `.pub`.
 4. Without a terminal, setup applies only with `--yes` or when the checkout
-   already has its record; otherwise it prints the plan and exits 2.
+   already has its record; otherwise it prints the plan and exits 5, held for
+   a person's yes. Setup with no identity and no terminal exits 2.
 5. After setup succeeds, it saves the identity to
    `~/.config/first-commit/identity.json`, or to
    `$XDG_CONFIG_HOME/first-commit/identity.json` when `XDG_CONFIG_HOME` is
@@ -178,11 +197,11 @@ none exists, and only in a terminal; the clone setup hook never asks.
 
 ## Output
 
-Exit codes: `0` pass, `1` finding, `2` configuration or input (invalid
-arguments, identity input, a cancelled setup), `3` dependency, `4` Git or file
-access.
+Exit codes: `0` done, `1` a finding or not done (read the error), `2` bad call
+(unknown verb or flag, invalid or missing input), `5` held for a person's yes.
 
-1. Ctrl-C exits 2 with `error: first-commit stopped on Ctrl-C.` When setup has
+1. Ctrl-C and a cancelled setup exit 1. Ctrl-C prints
+   `error: first-commit stopped on Ctrl-C.` When setup has
    already changed something, it undoes the change first and prints
    `error: Setup stopped on Ctrl-C; its changes were undone.`
 2. Findings are sorted by path, line, and rule. Each is followed by a `fix:`
@@ -193,11 +212,34 @@ access.
 4. When the repository root differs from the starting folder, human output
    starts with `Repository: <root>`.
 5. `--format json` carries `schema_version`, `tool_version`, and each
-   finding's `fix`. `check`, `doctor`, and the hooks also carry `repository`,
+   finding's `fix`; `help` and `version` print their own keys only. `check`, `doctor`, and the hooks also carry `repository`,
    the absolute root path.
 6. When Gitleaks is missing or fails its check, `doctor` prints `FAIL doctor`
-   with `secrets.scanner-unavailable` and exits 1; `check` and the hooks exit
-   3.
+   with `secrets.scanner-unavailable` and exits 1; `check` and the hooks stop
+   with exit 1.
+7. With `--format json`, a run that stops on an error prints only
+   `{"error":{"code":"...","message":"...","next":[...]}}` on stdout, with no
+   `schema_version`. `code` is one of `invalid-arguments`, `setup-input`,
+   `needs-confirmation`, `cancelled`, `interrupted`, `setup-blocked`,
+   `setup-failed`, `policy-missing`, `policy-invalid`, `contributor-record`,
+   `private-values`, `dependency-missing`, `git-access`, `file-access`, or
+   `unsupported-platform`. `setup-input` (exit 2) is a setup that a changed
+   call or a changed project file fixes. `setup-blocked` (exit 1) is a state
+   outside the call, such as a Git or setup lock, that a retry may clear.
+   `setup-failed` (exit 1) is a setup whose result or undo failed its check.
+   `message` is the masked error line without its `fix:` line. `next` holds
+   commands that start with an absolute path: the verb's `--help` for a bad
+   call, and the same setup call with an absolute `--root` and `--yes` for
+   `needs-confirmation`. The path is the launcher's own, or the program file
+   that ran, or `first-commit` on `PATH` when the run started as a Python
+   module; with none of these, `next` is empty. Inside the pre-commit,
+   commit-msg, and pre-push hooks, `next` holds
+   `pre-commit run first-commit-check --hook-stage manual --all-files` with
+   pre-commit's path, and `message` says to run it inside the repository; a
+   `git-access` error there names no command. When `next` is empty, `message`
+   says why. The JSON mode is read from a `--format json` or `--format=json`
+   option before parsing, so a call that fails to parse answers in JSON too.
+   An unknown flag lists every flag the verb accepts.
 
 ## Commit messages
 
@@ -241,9 +283,11 @@ blocks.
 1. `check` warns about a message finding in a commit a configured remote
    already has. If it is a secret, revoke it with its provider now. Rewording
    it needs a history rewrite and a force push, so agree on that with everyone
-   who shares the branch.
+   who shares the branch. `check --new-only` does not read such a commit at
+   all, so it prints nothing about it.
 2. A message finding in a commit no remote has blocks. The pre-push hook never
-   warns; it blocks.
+   warns; it blocks. `check --new-only` reads only these commits, their file
+   contents and their messages, and still reads every tag message.
 3. A tag message finding always blocks `check`. Delete the tag with
    `git tag -d`; if you pushed it, revoke any secret and run
    `git push --delete <remote> <tag>`. Then tag again.
@@ -302,6 +346,20 @@ line.
    `in the main worktree` for the main worktree's list.
 4. `doctor` reads neither list. `setup` creates the project list when it is
    missing and says when the user list also applies.
+5. The repository that keeps the user list holds its values by design, so the
+   list blocks nothing there. When the user list is, or links to, a regular file
+   tracked by the repository being checked (in its index), or by the main
+   worktree of a linked worktree (in the main worktree's own index, even inside
+   a hook that names the linked worktree's index), the run still reads and
+   checks the list, and its values still mask output, but no check applies
+   them. The run prints
+   `Private values: <list> is kept in this repository, so it does not apply here.`,
+   and setup says the same. A nested repository's, a submodule's, an untracked,
+   or an ignored file is not tracked, so its list applies. The path is resolved
+   before the open, and the opened file must still be the file at that path, so
+   a link changed between the steps applies the list. The project lists, the
+   secret scan, and every other check apply as before, and the list applies in
+   every other repository.
 
 ## Hook file rules
 
@@ -316,7 +374,8 @@ require:
    block to `.pre-commit-config.first-commit-proposal.yaml` and changes
    nothing else. Merge it, delete the proposal, and run setup again. A dry run
    writes nothing, and without a revision the fix line says to rerun with
-   `--revision`. A duplicate or changed
+   `--revision`. With `--hooks installed` the proposal holds the installed form
+   and needs no revision. A duplicate or changed
    hook stops setup with `The first-commit hook declaration conflicts.`, and a
    different `rev` stops it with an error that names both revisions.
 3. In place of `first-commit-push`, a project hook may run the push checks. It
@@ -333,6 +392,17 @@ require:
 6. Guidance names the setup hook only for a block-style item whose first key
    is its id (`- id: first-commit-setup`); any other layout makes it name
    `first-commit setup`.
+7. `setup --hooks installed` writes the installed form: `repo: local` hooks in
+   the shape of rule 4 whose entries run `first-commit hook <stage>`, plus
+   manual-stage `first-commit-doctor` and `first-commit-check` hooks that run
+   `first-commit doctor` and `first-commit check`. It has no `rev` and no setup
+   hook, so a clone runs `first-commit setup`. Whenever the hook file has a
+   `repo: local` hook whose entry starts with `first-commit`, setup stops and
+   `doctor` reports `hooks.installed-command` unless `PATH` finds `first-commit`
+   outside the repository. Setup's verification runs that program once as
+   `first-commit version` and stops unless it prints a version. Setup keeps an
+   existing hook file in either form and says that `--hooks installed` shapes
+   only a new file.
 
 pre-commit 3.8.0's old stage names `commit`, `merge-commit`, and `push` count
 as their new names.
@@ -358,13 +428,14 @@ The policy cannot change these limits.
 
 | Limit | Value | Over the limit |
 | --- | --- | --- |
-| Bytes per file | 10 MiB | A `files.too-large` finding; the bytes are not checked. A file that grows past it during a run gives exit 4 |
-| Paths per scope | 10,000 | Exit 4, `File count exceeds the limit of 10,000 paths.` |
+| Bytes per file | 10 MiB | A `files.too-large` finding; the bytes are not checked. A file that grows past it during a run gives exit 1 |
+| Paths per scope | 10,000 | Exit 1, `File count exceeds the limit of 10,000 paths.` |
 | Findings per scope | 1,000 | Later findings are not shown |
-| Commit message | 1 MiB | Exit 4. In history and pre-push scans, a commit or tag object over the limit also gives exit 4 |
+| Commit message | 1 MiB | Exit 1. In history and pre-push scans, a commit or tag object over the limit also gives exit 1 |
 | Policy file | 1 MiB | Exit 2 |
-| One Git command, or one blob from `git cat-file --batch` | 120 seconds | Exit 4, `Git timed out.` |
-| One Gitleaks scan | 120 seconds; 600 for a full history scan | Exit 3, `Gitleaks timed out after <N> seconds.` |
+| One Git command, or one blob from `git cat-file --batch` | 120 seconds | Exit 1, `Git timed out.` |
+| One Gitleaks scan | 120 seconds; 600 for a full history scan | Exit 1, `Gitleaks timed out after <N> seconds.` |
+| Remote list a scan leaves out (branch tips for a push, remote names for `check --new-only`) | 64 KiB | The scan reads every local commit but the stash; `check --new-only` adds the warning `history.whole-history` |
 
 The 10,000-path limit is deliberate: first-commit targets new and small
 projects.
@@ -412,7 +483,7 @@ MiB, and a bad file stops `check` and the hooks with exit 2.
 | Secret in a commit | Gitleaks on staged bytes, messages, history, and tags; privacy rules | Novel or obfuscated secrets |
 | Working copy differs from index | Check index blobs | None known |
 | Output leaks a match | Fixed summaries | Paths and line numbers stay visible |
-| Hostile hook source | Fixed address, pinned commit | Trust in that commit |
+| Hostile hook source | Pinned form: fixed address, pinned commit. Installed form: a `first-commit` found outside the repository that prints its version | Trust in that commit, or in the installed command |
 | Bypassed hooks | None locally | Needs server rules |
 | Forged authorship | Signing settings, checked author and committer emails, opt-in self-trust | No command verifies signatures |
 | Resource exhaustion | Read, count, and finding limits; one file in memory (at most 256 MiB for a 10 MiB file) | Git's own memory and time |
@@ -430,16 +501,24 @@ Known gaps:
 3. A commit pushed by raw id as a second ref, held by no branch, is not
    scanned by that push; `check` and the next branch push scan it.
 4. A stale or hand-made ref of a configured remote is trusted: the pre-push
-   scan leaves its commits out, and `check` only warns about their messages.
+   scan and `check --new-only` leave its commits out, and `check` only warns
+   about their messages.
 5. The hooks pre-commit installs run with your own `PATH`. An absolute `PATH`
    entry inside the repository still reaches programs other than Git, curl,
-   and Gitleaks, such as `ssh`.
+   Gitleaks, and `first-commit`, such as `ssh`. Installed-form hooks run the
+   `first-commit` that pre-commit finds on the `PATH` Git gives the hook, which
+   setup and `doctor` do not see. A Git client or editor with a shorter `PATH`,
+   as many graphical ones have, may not find it, and every commit then fails.
 6. A Gitleaks found on `PATH` is trusted as installed; only its version and
    calibration are checked.
 7. Gitleaks does not decode UTF-16. The privacy rules decode it only after a
    byte-order mark.
 8. On macOS with Python 3.11 or 3.12, processes started by
    `git cat-file --batch` may outlive it.
+9. `check --new-only` leaves out every commit that any configured remote's
+   tracking branch holds, including remotes whose names differ only in case.
+   With two or more remotes it can pass a commit that a push to another remote
+   would send; the pre-push hook still blocks that push.
 
 ## How it is tested
 

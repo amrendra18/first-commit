@@ -27,8 +27,8 @@ from tests.validation_support import render_json
 
 SOURCE = Path(__file__).resolve().parents[1] / "src/first_commit"
 RULE = re.compile(
-    r'"((?:documents|environment|files|git|hooks|message|privacy|scaffold|secrets|'
-    r'template|text)\.[a-z0-9-]+)"'
+    r'"((?:documents|environment|files|git|history|hooks|message|privacy|scaffold|'
+    r'secrets|template|text)\.[a-z0-9-]+)"'
 )
 NOT_RULES: set[str] = set()
 APPROVAL_FIELDS = (

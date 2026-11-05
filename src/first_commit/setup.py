@@ -19,6 +19,7 @@ from first_commit.gitleaks_scanner import DependencyError
 from first_commit.hooks import (
     APPROVED_REPOSITORIES,
     HTTPS_REPOSITORY,
+    LOCAL_REPOSITORY,
     REVISION,
     REVISION_CHARS,
     SSH_REPOSITORY,
@@ -30,7 +31,7 @@ from first_commit.machine_identity import (
     NAME_VARIABLE,
     PATH_VARIABLE,
 )
-from first_commit.models import SetupError
+from first_commit.models import SetupBlockedError, SetupError, SetupFailedError
 from first_commit.paths import create_exclusive
 from first_commit.setup_apply import (
     SETUP_LOCK_NAME,
@@ -60,6 +61,7 @@ IDENTITY_REQUIRED = (
     f"set {NAME_VARIABLE}, {EMAIL_VARIABLE}, and {KEY_VARIABLE}."
 )
 TRANSPORTS = {"https": HTTPS_REPOSITORY, "ssh": SSH_REPOSITORY}
+HOOK_FORMS = ("pinned", "installed")
 GitSnapshot = tuple[tuple[str, int, bytes | None], ...]
 
 
@@ -69,6 +71,7 @@ class SetupRequest:
     transport: str | None = None
     license_choice: str = "none"
     docs: str = "core"
+    hooks: str = "pinned"
     trust_self: bool = False
     dry_run: bool = False
     confirmed: bool = False
@@ -104,6 +107,9 @@ def _project_revision(root: Path) -> str | None:
 
 
 def _preflight_source(root: Path, source: str) -> None:
+    # Local hooks run the installed command, so pre-commit fetches nothing.
+    if source == LOCAL_REPOSITORY:
+        return
     if source not in APPROVED_REPOSITORIES:
         raise SetupError("Hook source preflight requires an approved repository URL.")
     environment = sanitized_git_environment()
@@ -224,7 +230,7 @@ def _create_git_folder(root: Path) -> None:
     try:
         (root / ".git").mkdir()
     except FileExistsError as error:
-        raise SetupError(
+        raise SetupBlockedError(
             "Another process created .git after setup started; setup changed "
             "nothing.\nfix: wait for that process to end, then rerun setup."
         ) from error
@@ -246,7 +252,7 @@ def _apply_in_new_repository(
             initialized = True
             initial_git = _git_snapshot(root / ".git")
         if initial_git is None:
-            raise SetupError(
+            raise SetupFailedError(
                 "Git initialization produced unsafe metadata; inspect .git."
             )
         if received:
@@ -262,7 +268,7 @@ def _apply_in_new_repository(
                 shutil.rmtree(root / ".git", ignore_errors=True)
             return
         if _git_snapshot(root / ".git") != initial_git:
-            raise SetupError(
+            raise SetupFailedError(
                 "Setup failed after it created .git, and the new .git folder changed "
                 "while setup ran, so setup kept it.\n"
                 "fix: run `git status` and `git log` to see what .git holds; if "
@@ -312,15 +318,18 @@ def setup_repository(
     root = root.resolve()
     if not root.is_dir():
         raise SetupError("Setup requires an existing folder.")
+    if request.hooks not in HOOK_FORMS:
+        raise SetupError("Hook form must be pinned or installed.")
+    installed_form = request.hooks == "installed"
     keeps_hooks = read_if_present(root / HOOK_CONFIG) is not None
     revision, source = _revision(
-        request.revision, request.transport, optional=keeps_hooks
+        request.revision, request.transport, optional=keeps_hooks or installed_form
     )
     if revision is None:
         revision = _project_revision(root)
     options = SetupOptions(
         revision=revision,
-        source=source,
+        source=LOCAL_REPOSITORY if installed_form else source,
         license_choice=request.license_choice,
         docs=request.docs,
         trust_self=request.trust_self,

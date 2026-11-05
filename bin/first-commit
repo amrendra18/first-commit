@@ -16,8 +16,10 @@ if ! running="$("$python_command" -c "$probe" 2>/dev/null)"; then
     "why: it runs \$VIRTUAL_ENV/bin/python, else .venv/bin/python, else python3 from PATH." \
     "fix: create the project environment with \`python3.13 -m venv .venv\` and \`.venv/bin/python -m pip install -e '.[test]'\`, or activate a virtual environment with Python 3.11 or newer." \
     >&2
-  exit 3
+  exit 1
 fi
 export PYTHONPATH="$project_dir/src"
+# The CLI names this path in the next commands of a JSON error object.
+export FIRST_COMMIT_EXECUTABLE="$project_dir/bin/first-commit"
 export PATH="$project_dir/.local/bin:$PATH"
 exec "$python_command" -m first_commit.cli "$@"

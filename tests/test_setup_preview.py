@@ -13,7 +13,7 @@ from first_commit.contributor import (
     create_contributor,
 )
 from first_commit.hooks import HTTPS_REPOSITORY, SSH_REPOSITORY
-from first_commit.models import SetupError
+from first_commit.models import SetupBlockedError, SetupError, SetupFailedError
 from first_commit.setup import SetupRequest, setup_repository
 from first_commit.setup_apply import setup_lock
 from first_commit.setup_files import restore_git_config
@@ -172,6 +172,39 @@ class SetupPreviewTest(SetupFixture):
         repeated = setup_repository(self.root, SetupRequest(revision=REVISION))
         self.assertIn("Private values: retained" + also, repeated)
 
+    # Setup uses the rule check uses: only a tracked file is kept here.
+    def test_setup_says_a_user_list_this_repository_tracks_does_not_apply(
+        self,
+    ) -> None:
+        run_git(self.root, "init", "-q")
+        self.local_hooks()
+        config = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"XDG_CONFIG_HOME": config}))
+        kept = self.root / "privacy/terms.txt"
+        kept.parent.mkdir()
+        kept.write_text("# No values yet.\n", encoding="utf-8")
+        user_list = Path(config, "first-commit/private-values.txt")
+        user_list.parent.mkdir()
+        user_list.symlink_to(kept)
+        start = (
+            "Private values: would create .local/first-commit/private-values.txt;"
+            " add one private value per line; "
+            "$XDG_CONFIG_HOME/first-commit/private-values.txt "
+        )
+        for tracked, end in (
+            (False, "also applies"),
+            (True, "is kept in this repository, so it does not apply here"),
+        ):
+            with self.subTest(tracked=tracked):
+                if tracked:
+                    run_git(self.root, "add", "--", "privacy/terms.txt")
+                preview = setup_repository(
+                    self.root,
+                    SetupRequest(revision=REVISION, dry_run=True),
+                    contributor=self.person,
+                )
+                self.assertIn(start + end, preview)
+
 
 class SetupRecoveryTest(SetupFixture):
     def lock(self) -> Path:
@@ -222,7 +255,7 @@ class SetupRecoveryTest(SetupFixture):
         with (
             patch("first_commit.setup_apply.create_contributor", side_effect=edited),
             self.assertRaisesRegex(
-                SetupError,
+                SetupBlockedError,
                 r"^\.git/config changed while setup ran(?s:.*)\n"
                 r"fix: run `git config --local --list`",
             ),
@@ -271,7 +304,7 @@ class SetupRecoveryTest(SetupFixture):
                 "first_commit.setup_apply.contributor_findings",
                 return_value=[object()],
             ),
-            self.assertRaisesRegex(SetupError, "failed verification"),
+            self.assertRaisesRegex(SetupFailedError, "failed verification"),
         ):
             self.apply()
         with self.assertRaises(subprocess.CalledProcessError):

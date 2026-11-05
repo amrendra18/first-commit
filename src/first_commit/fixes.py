@@ -61,6 +61,15 @@ def _declare_fix(identifier: str) -> str:
     )
 
 
+# The repo: local shape of Hook file rules 4, for a project that declares local hooks.
+LOCAL_DECLARE_FIXES = {
+    f"hooks.{name}-check": (
+        f"Declare first-commit-{name} once as a repo: local hook with entry "
+        f"first-commit hook {stage}, language system, always_run true, "
+        f"pass_filenames {str(stage == 'commit-msg').lower()}, and stages [{stage}]."
+    )
+    for name, stage in (("staged", "pre-commit"), ("message", "commit-msg"))
+}
 COMMON_FIXES = {
     "documents.required": "Add the missing document at the repository root and stage it.",
     "environment.not-ignored": (
@@ -88,6 +97,14 @@ COMMON_FIXES = {
         "Stage the files to commit with git add, including "
         + " and ".join(REQUIRED_DOCUMENTS)
         + "."
+    ),
+    "history.whole-history": (
+        "Nothing was left out: this run checked every commit. To check only new "
+        "commits, remove the remotes you no longer use with git remote remove <name>."
+    ),
+    "hooks.installed-command": (
+        "Put first-commit on PATH in a folder outside this repository, as Install in "
+        "the first-commit README shows, or declare the pinned first-commit hooks."
     ),
     "hooks.nested-remote": (
         "Rename the nested remote so its name is not another remote's name plus /, "
@@ -251,4 +268,6 @@ def fix_for(finding: Finding, *, setup_hook: bool = True) -> str | None:
         return MESSAGE_FIXES[finding.rule_id]
     if finding.path == TAG_MESSAGE_PATH and finding.rule_id in MESSAGE_FIXES:
         return TAG_MESSAGE_FIX
+    if finding.local_hook and finding.rule_id in LOCAL_DECLARE_FIXES:
+        return LOCAL_DECLARE_FIXES[finding.rule_id]
     return (HOOK_FIXES if setup_hook else TOOL_FIXES).get(finding.rule_id)

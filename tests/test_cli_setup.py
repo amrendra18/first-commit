@@ -191,9 +191,7 @@ class CliSetupTest(CliFixture):
         self.assertFalse(json.loads(output)["dry_run"])
         self.assertEqual(person, setup.call_args.kwargs["contributor"])
 
-    def test_cancelled_setup_and_dependency_errors_have_distinct_exit_codes(
-        self,
-    ) -> None:
+    def test_cancelled_setup_and_dependency_errors_exit_one(self) -> None:
         person = Contributor("Example", "public@" + "example.net", "key.pub")
         with (
             patch(
@@ -206,12 +204,12 @@ class CliSetupTest(CliFixture):
         ):
             stream.isatty.return_value = True
             code, _, error = self.run_cli("setup")
-        self.assertEqual(2, code)
+        self.assertEqual(1, code)
         self.assertIn("cancelled", error)
         setup.assert_called_once()
         for exception, expected in (
-            (DependencyError("missing"), 3),
-            (GitError("unavailable"), 4),
+            (DependencyError("missing"), 1),
+            (GitError("unavailable"), 1),
         ):
             with (
                 self.subTest(exception=exception),
@@ -271,7 +269,7 @@ class CliSetupTest(CliFixture):
             stream.isatty.return_value = True
             code, _, error = self.run_cli("setup")
         self.assertEqual(
-            (2, "Public Git author name: \nerror: first-commit stopped on Ctrl-C.\n"),
+            (1, "Public Git author name: \nerror: first-commit stopped on Ctrl-C.\n"),
             (code, error),
         )
 

@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -15,6 +16,12 @@ HISTORY_REVISIONS = ("--exclude=refs/stash", "--all")
 # argument over 128 KiB (MAX_ARG_STRLEN). Past this size the scan drops the
 # exclusions and scans all local commits.
 MAX_REVISION_BYTES = 64 * 1024
+
+
+# check --new-only reads only the commits no configured remote's tracking branches
+# hold, the same commits check only warns about.
+class HistoryRange(Enum):
+    NEW_ONLY = "new-only"
 
 
 class PushedScope(NamedTuple):
@@ -45,6 +52,19 @@ def configured_remotes(root: Path) -> list[str]:
     # A hand-edited name may hold glob characters, spaces, or bytes that are not
     # UTF-8; such a remote is not trusted.
     return [name for name in _remote_names(root) if REMOTE_NAME.fullmatch(name)]
+
+
+def remote_patterns(root: Path) -> tuple[str, ...]:
+    return tuple(f"--remotes={name}" for name in configured_remotes(root))
+
+
+# None when the list of remotes to leave out is too long for one argument.
+def new_revisions(root: Path) -> tuple[str, ...] | None:
+    excluded = remote_patterns(root)
+    if not excluded:
+        return HISTORY_REVISIONS
+    revisions = (*HISTORY_REVISIONS, "--not", *excluded)
+    return None if len(" ".join(revisions)) > MAX_REVISION_BYTES else revisions
 
 
 def _differ_only_in_case(name: str, other: str) -> bool:

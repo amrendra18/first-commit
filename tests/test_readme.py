@@ -39,7 +39,7 @@ PUBLIC_TEXTS = (
     "SECURITY.md",
     "CONTRIBUTING.md",
     "ARCHITECTURE.md",
-    ".agents/skills/first-commit/SKILL.md",
+    "skills/first-commit/SKILL.md",
     ".github/ISSUE_TEMPLATE/bug_report.md",
     "verify/features/README.md",
     "pyproject.toml",
@@ -195,8 +195,7 @@ class PublicFactsTest(unittest.TestCase):
         self.assertIn(f"git ls-remote {HTTPS_REPOSITORY} 'v{__version__}^{{}}'", README)
 
     def test_readme_names_the_version_command(self) -> None:
-        self.assertIn('"$FIRST_COMMIT" version\n', README)
-        self.assertIn("`--version`", README)
+        self.assertIn("\nfirst-commit --version\n", README)
         output = io.StringIO()
         with redirect_stdout(output):
             self.assertEqual(0, cli.main(("version",)))

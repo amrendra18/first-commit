@@ -13,6 +13,7 @@ from first_commit.git import GitError, repository_root
 from first_commit.models import Candidate, Finding, Origin, Severity
 from first_commit.paths import PathError
 from first_commit.policy import REQUIRED_DOCUMENTS, parse_policy
+from first_commit.pushed import HISTORY_REVISIONS
 from first_commit.validation import (
     doctor,
     history,
@@ -309,7 +310,9 @@ class ValidationTest(ValidationFixture):
         ) as scanner:
             self.assertEqual((finding,), history(self.root, self.policy).findings)
         scanner.assert_called_once_with(
-            self.root, max_findings=self.policy.max_findings
+            self.root,
+            max_findings=self.policy.max_findings,
+            revisions=HISTORY_REVISIONS,
         )
         with patch("first_commit.validation.scan_history", return_value=()):
             self.assertEqual((), history(self.root, self.policy).findings)
@@ -343,7 +346,9 @@ class ValidationTest(ValidationFixture):
         )
         policy = replace(self.policy, max_findings=2)
 
-        def scanner_order(*_: object, max_findings: int) -> tuple[Finding, ...]:
+        def scanner_order(
+            *_: object, max_findings: int, **__: object
+        ) -> tuple[Finding, ...]:
             return located[:max_findings]
 
         with patch("first_commit.validation.scan_history", side_effect=scanner_order):

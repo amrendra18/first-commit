@@ -56,7 +56,14 @@ from first_commit.gitleaks_scanner import (
 from first_commit.history_messages import MessageScope, history_message_findings
 from first_commit.hooks import hook_findings, push_check_findings
 from first_commit.message_scissors import message_secret_findings, split_message
-from first_commit.models import Candidate, Finding, Origin, Result
+from first_commit.models import (
+    GIT_CONFIG_PATH,
+    Candidate,
+    Finding,
+    Origin,
+    Result,
+    Severity,
+)
 from first_commit.paths import PathError, read_explicit_file_bytes, read_regular_bytes
 from first_commit.policy import (
     MAX_POLICY_BYTES,
@@ -66,7 +73,12 @@ from first_commit.policy import (
     parse_policy,
 )
 from first_commit.policy_fields import PolicyError
-from first_commit.pushed import PushedScope
+from first_commit.pushed import (
+    HISTORY_REVISIONS,
+    HistoryRange,
+    PushedScope,
+    new_revisions,
+)
 
 GENERATED_DOCUMENTS = (
     *(path for name in DOCUMENT_NAMES for path in (name, proposal_name(name))),
@@ -160,6 +172,15 @@ def _staged_policy(root: Path, policy: Policy) -> Policy:
     return replace(parsed, contributor_emails=policy.contributor_emails)
 
 
+WHOLE_HISTORY = Finding(
+    rule_id="history.whole-history",
+    path=GIT_CONFIG_PATH,
+    summary=(
+        "The remote list is too long to leave out the commits remotes hold, so "
+        "--new-only checked the whole history."
+    ),
+    severity=Severity.WARNING,
+)
 EMPTY_INDEX = Finding(
     rule_id="git.empty-index",
     path="<index>",
@@ -314,18 +335,22 @@ def message(
 def history(
     root: Path,
     policy: Policy,
-    scope: PushedScope | None = None,
+    scope: PushedScope | HistoryRange | None = None,
     private_values: Sequence[str] = (),
     *,
     warn_on_remote: bool = False,
 ) -> Result:
     found = FindingCollector(policy.max_findings)
-    found.add(
-        scan_history(root, max_findings=found.room)
-        if scope is None
-        else scan_pushed(root, scope, max_findings=found.room)
-    )
-    messages = MessageScope(scope, warn_on_remote=warn_on_remote)
+    if isinstance(scope, PushedScope):
+        found.add(scan_pushed(root, scope, max_findings=found.room))
+        messages = MessageScope(scope, warn_on_remote)
+    else:
+        revisions = HISTORY_REVISIONS if scope is None else new_revisions(root)
+        if revisions is None:
+            found.add((WHOLE_HISTORY,))
+            revisions = HISTORY_REVISIONS
+        found.add(scan_history(root, max_findings=found.room, revisions=revisions))
+        messages = MessageScope(None, warn_on_remote, revisions)
     found.add(
         history_message_findings(
             root, policy, private_values, messages, max_findings=found.room

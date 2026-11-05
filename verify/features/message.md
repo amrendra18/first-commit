@@ -14,7 +14,7 @@ the message for secrets.
    them from a message it opens in an editor. Git keeps them in a `-m` or `-F` message that
    no editor opens, so there they block.
 4. The pre-push hook never warns. Only `first-commit check` warns, about a commit a configured
-   remote already has.
+   remote already has; `first-commit check --new-only` leaves that commit out.
 
 ## How to get to it
 

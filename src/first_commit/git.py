@@ -178,6 +178,12 @@ def run_git(
     return _execute(root, arguments, input_bytes, sanitized_git_environment(root=root))
 
 
+# A hook's GIT_INDEX_FILE is the index of the worktree it runs in; another
+# worktree is asked about its own index.
+def run_git_own_index(root: Path, arguments: Sequence[str]) -> bytes:
+    return _execute(root, arguments, None, sanitized_git_environment())
+
+
 # Keeps the GIT_CONFIG_* variables, so `git var` reads the identity `git commit`
 # records: Git passes `git -c` settings to a hook in them, and they can name other
 # global and system configuration files.

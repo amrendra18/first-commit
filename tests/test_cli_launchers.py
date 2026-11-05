@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import runpy
 import subprocess
@@ -88,6 +89,20 @@ class CliLauncherTest(unittest.TestCase):
                 self.assertEqual("-m first_commit.cli version", lines[2])
                 self.assertEqual("active" if active else ".venv", lines[3])
 
+    def test_checkout_launcher_names_its_own_absolute_path_in_next(self) -> None:
+        launcher = PROJECT / "bin" / "first-commit"
+        result = subprocess.run(
+            [str(launcher), "no-such-verb", "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual((2, ""), (result.returncode, result.stderr))
+        self.assertEqual(
+            [f"{launcher} --help"], json.loads(result.stdout)["error"]["next"]
+        )
+
     def test_checkout_launcher_refuses_python_older_than_3_11(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -104,7 +119,7 @@ class CliLauncherTest(unittest.TestCase):
                 timeout=30,
                 check=False,
             )
-        self.assertEqual((3, ""), (result.returncode, result.stdout))
+        self.assertEqual((1, ""), (result.returncode, result.stdout))
         self.assertEqual(
             [
                 (

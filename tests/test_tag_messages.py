@@ -166,15 +166,15 @@ class TagMessageParsingTest(TemporaryRootTest):
         policy = parse_policy(b'{"schema_version":1}', self.root)
         tag_ref = TAG.encode() + b" tag\n"
         for remotes, answers, error in (
-            (["origin"], (b"HEAD\n",), "invalid remote commit"),
-            ([], (b"", b"HEAD tag\n"), "invalid tag"),
-            ([], (b"", tag_ref, TAG.encode() + b" blob 3\n"), "inconsistent"),
-            ([], (b"", tag_ref, TAG.encode() + b" missing\n"), "inconsistent"),
+            (("--remotes=origin",), (b"HEAD\n",), "invalid remote commit"),
+            ((), (b"", b"HEAD tag\n"), "invalid tag"),
+            ((), (b"", tag_ref, TAG.encode() + b" blob 3\n"), "inconsistent"),
+            ((), (b"", tag_ref, TAG.encode() + b" missing\n"), "inconsistent"),
         ):
             with (
                 self.subTest(answers=answers),
                 mock.patch(
-                    "first_commit.history_messages.configured_remotes",
+                    "first_commit.history_messages.remote_patterns",
                     return_value=remotes,
                 ),
                 mock.patch(

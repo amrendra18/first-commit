@@ -6,6 +6,7 @@ from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 
+from first_commit.arguments import ArgumentError
 from first_commit.contributor import (
     CONTRIBUTOR_PATH,
     Contributor,
@@ -27,7 +28,12 @@ from first_commit.machine_identity import (
     load_identity,
     missing_identity_message,
 )
-from first_commit.models import ExitCode, SetupError
+from first_commit.models import (
+    ConfirmationNeededError,
+    ExitCode,
+    SetupCancelledError,
+    SetupError,
+)
 from first_commit.reporting import print_json
 from first_commit.setup import SetupRequest, hook_proposal_error, setup_repository
 from first_commit.setup_command import TRUST_SELF_VARIABLE
@@ -143,17 +149,22 @@ def clone_setup(options: argparse.Namespace) -> int:
         trust_self=os.environ.get(TRUST_SELF_VARIABLE) == "1",
         confirmed=True,
     )
-    print(_identity_line(contributor, source), flush=True)
+    identity = _identity_line(contributor, source)
+    stream = sys.stderr if options.format == "json" else sys.stdout
+    print(identity, file=stream, flush=True)
     try:
         actions = setup_repository(
             root,
             request,
             contributor=contributor,
-            progress=lambda message: print(message, flush=True),
+            progress=lambda message: print(message, file=stream, flush=True),
         )
     except HooksMissingError as error:
         raise hook_proposal_error(root, error, dry_run=False) from error
-    print("\n".join((*actions, remember_identity(contributor))))
+    done = (*actions, remember_identity(contributor))
+    if options.format == "json":
+        done = (identity, *done)
+    _report_setup(done, options.format, dry_run=False)
     return ExitCode.PASSED
 
 
@@ -169,12 +180,13 @@ def _ask(prompt: str) -> str:
         raise
 
 
-def _unconfirmed(source: IdentitySource) -> SetupError:
-    return SetupError(
+def _unconfirmed(root: Path, source: IdentitySource) -> ConfirmationNeededError:
+    return ConfirmationNeededError(
         "Setup did not apply the plan: there is no terminal to confirm it, and the "
         f"identity comes from {_source_text(source)}, not from this checkout's "
         "record.\n"
-        "fix: check the plan above, then rerun with --yes to apply it."
+        "fix: check the plan above, then rerun with --yes to apply it.",
+        root,
     )
 
 
@@ -248,9 +260,9 @@ def _setup(options: argparse.Namespace, root: Path, request: SetupRequest) -> in
     if not options.yes and (terminal or source is not IdentitySource.RECORD):
         print("\n".join((identity, *plan)), file=stream, flush=True)
         if not terminal:
-            raise _unconfirmed(source)
+            raise _unconfirmed(root, source)
         if _ask("Apply this setup? [y/N] ").lower() not in {"y", "yes"}:
-            raise SetupError("Setup was cancelled; no changes made.")
+            raise SetupCancelledError("Setup was cancelled; no changes made.")
     actions = setup_repository(
         root,
         replace(request, confirmed=True),
@@ -265,13 +277,35 @@ def _setup(options: argparse.Namespace, root: Path, request: SetupRequest) -> in
     return ExitCode.PASSED
 
 
+def _require_hook_options(options: argparse.Namespace) -> None:
+    given = [
+        f"`{flag}`"
+        for flag, value in (
+            ("--revision", options.revision),
+            ("--transport", options.transport),
+        )
+        if value is not None
+    ]
+    if options.hooks == "installed" and given:
+        names = " and ".join(given)
+        raise ArgumentError(
+            "Invalid command arguments: `--hooks installed` writes hooks that run the "
+            "first-commit command on PATH; it pins no commit and no address, so "
+            f"there is nothing for {names} to set.\n"
+            f"fix: rerun setup without {names}, or with --hooks pinned.",
+            "first-commit setup",
+        )
+
+
 def run_setup(options: argparse.Namespace) -> int:
+    _require_hook_options(options)
     root = Path(options.root).resolve() if options.root else Path.cwd().resolve()
     request = SetupRequest(
         revision=options.revision,
         transport=options.transport,
         license_choice=options.license,
         docs=options.docs,
+        hooks=options.hooks,
         trust_self=options.trust_self,
     )
     try:

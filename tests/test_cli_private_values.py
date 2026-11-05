@@ -46,6 +46,23 @@ class PrivateValuesFixture(CliFixture):
         ):
             return self.run_cli(*arguments)
 
+    def check_from_a_subfolder(self, *arguments: str) -> tuple[int, str]:
+        subfolder = self.root / "docs"
+        subfolder.mkdir(exist_ok=True)
+        previous = Path.cwd()
+        os.chdir(subfolder)
+        self.addCleanup(os.chdir, previous)
+        output = io.StringIO()
+        passed = Result("test", ())
+        with (
+            redirect_stdout(output),
+            patch("first_commit.validation.doctor", return_value=passed),
+            patch("first_commit.validation.history", return_value=passed),
+            patch("first_commit.validation.scan_staged", return_value=[]),
+        ):
+            code = cli.main(("check", *arguments))
+        return code, output.getvalue()
+
 
 class PrivateValuesCliTest(PrivateValuesFixture):
     def test_each_command_blocks_a_private_value_in_every_scope_it_checks(
@@ -73,23 +90,6 @@ class PrivateValuesCliTest(PrivateValuesFixture):
                 }
                 self.assertEqual(scopes, found)
 
-    def check_from_a_subfolder(self, *arguments: str) -> tuple[int, str]:
-        subfolder = self.root / "docs"
-        subfolder.mkdir(exist_ok=True)
-        previous = Path.cwd()
-        os.chdir(subfolder)
-        self.addCleanup(os.chdir, previous)
-        output = io.StringIO()
-        passed = Result("test", ())
-        with (
-            redirect_stdout(output),
-            patch("first_commit.validation.doctor", return_value=passed),
-            patch("first_commit.validation.history", return_value=passed),
-            patch("first_commit.validation.scan_staged", return_value=[]),
-        ):
-            code = cli.main(("check", *arguments))
-        return code, output.getvalue()
-
     def test_the_repository_path_hides_a_private_value(self) -> None:
         folder = self.root.name
         self.private.write_text(f"{CANARY}\n{folder}\n", encoding="utf-8")
@@ -112,7 +112,7 @@ class PrivateValuesCliTest(PrivateValuesFixture):
         search = os.pathsep.join((str(program.parent), os.environ["PATH"]))
         with patch.dict(os.environ, {"PATH": search}):
             code, _, error = self.run_cli("check")
-        self.assertEqual(4, code)
+        self.assertEqual(1, code)
         self.assertIn("Git on PATH is bin/git inside this repository", error)
         self.assertNotIn(self.root.name.casefold(), error.casefold())
 
@@ -132,14 +132,14 @@ class PrivateValuesCliTest(PrivateValuesFixture):
                 patch.dict(os.environ, {"PATH": search}),
             ):
                 code, output, error = self.run_cli(*arguments)
-                self.assertEqual(3, code, output + error)
+                self.assertEqual(1, code, output + error)
                 self.assertIn(
-                    "Gitleaks on PATH is tools-<private value>/gitleaks", error
+                    "Gitleaks on PATH is tools-<private value>/gitleaks", output + error
                 )
                 self.assertNotIn(CANARY, output + error)
 
 
-class UserPrivateValuesCliTest(PrivateValuesFixture):
+class UserListFixture(PrivateValuesFixture):
     def setUp(self) -> None:
         super().setUp()
         self.private.write_text("# No project values.\n", encoding="utf-8")
@@ -150,6 +150,28 @@ class UserPrivateValuesCliTest(PrivateValuesFixture):
         self.user_list.parent.mkdir()
         self.enterContext(patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.config)}))
 
+    def linked_worktree(self) -> Path:
+        run_git(self.root, "add", "--", ".repo-policy.json")
+        run_git(
+            self.root,
+            "-c",
+            "user.name=Example",
+            "-c",
+            "user.email=example@example.com",
+            "commit",
+            "-q",
+            "--no-verify",
+            "--no-gpg-sign",
+            "-m",
+            "start",
+        )
+        linked = self.root.parent / (self.root.name + "-linked")
+        run_git(self.root, "worktree", "add", "-q", str(linked))
+        self.addCleanup(shutil.rmtree, linked, ignore_errors=True)
+        return linked
+
+
+class UserPrivateValuesCliTest(UserListFixture):
     def write_user_list(
         self, path: Path, mode: int = 0o600, text: str = CANARY + "\n"
     ) -> None:
@@ -316,26 +338,6 @@ class UserPrivateValuesCliTest(PrivateValuesFixture):
                     "600, so its owner should run `chmod 600` on it.\n",
                     error,
                 )
-
-    def linked_worktree(self) -> Path:
-        run_git(self.root, "add", "--", ".repo-policy.json")
-        run_git(
-            self.root,
-            "-c",
-            "user.name=Example",
-            "-c",
-            "user.email=example@example.com",
-            "commit",
-            "-q",
-            "--no-verify",
-            "--no-gpg-sign",
-            "-m",
-            "start",
-        )
-        linked = self.root.parent / (self.root.name + "-linked")
-        run_git(self.root, "worktree", "add", "-q", str(linked))
-        self.addCleanup(shutil.rmtree, linked, ignore_errors=True)
-        return linked
 
     def test_a_linked_worktree_adds_the_main_list_to_its_own(self) -> None:
         self.private.write_text(CANARY + "\n", encoding="utf-8")

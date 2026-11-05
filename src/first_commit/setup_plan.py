@@ -31,10 +31,19 @@ from first_commit.gitleaks_scanner import (
     validate_scanner,
 )
 from first_commit.hooks import HOOK_TYPES, INVALID_RULE, hook_problems
-from first_commit.models import GIT_CONFIG_PATH, GIT_HOOKS_PATH, SetupError
+from first_commit.models import (
+    GIT_CONFIG_PATH,
+    GIT_HOOKS_PATH,
+    SetupBlockedError,
+    SetupError,
+)
 from first_commit.paths import PathError
 from first_commit.policy import PRIVATE_VALUES_PATH
-from first_commit.private_values import PRIVATE_VALUES_SUBJECT, user_values_path
+from first_commit.private_values import (
+    PRIVATE_VALUES_SUBJECT,
+    UserList,
+    user_list_state,
+)
 from first_commit.scanner_install import local_scanner_failed
 from first_commit.setup_command import (
     HOOK_CONFIG,
@@ -86,7 +95,7 @@ class SetupPlan:
     existing_hooks: bool
     contributor_exists: bool
     private_values_exist: bool
-    user_values_exist: bool
+    user_list: UserList
     install_scanner: bool
     scanner_checked: bool
     git: GitFacts
@@ -240,7 +249,7 @@ def _git_facts(
     )
     git_config = read_if_present(root / GIT_CONFIG_PATH)
     if os.path.lexists(root / f"{GIT_CONFIG_PATH}.lock"):
-        raise SetupError("Git configuration is locked; retry later.")
+        raise SetupBlockedError("Git configuration is locked; retry later.")
     return GitFacts(
         configure_identity=configure_identity,
         activate_template=_template_needed(root),
@@ -302,7 +311,7 @@ def plan_setup(
         existing_hooks=existing_hooks,
         contributor_exists=load_contributor(root) is not None,
         private_values_exist=os.path.lexists(root / PRIVATE_VALUES_PATH),
-        user_values_exist=os.path.lexists(user_values_path()),
+        user_list=user_list_state(None if blank else root),
         install_scanner=_scanner_missing(root, check_scanner=check_scanner),
         scanner_checked=check_scanner,
         git=git,

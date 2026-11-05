@@ -3,11 +3,12 @@ from pathlib import Path
 
 from first_commit.checks.text import no_commit_findings
 from first_commit.gitleaks_scanner import SCANNER_VERSION
+from first_commit.hooks import LOCAL_REPOSITORY
 from first_commit.models import Candidate, Origin
 from first_commit.paths import PathError, read_regular_bytes
 from first_commit.policy import POLICY_PATH, PRIVATE_VALUES_PATH
 from first_commit.policy_fields import DEFAULT_LIMITS
-from first_commit.private_values import user_values_label
+from first_commit.private_values import UserList, user_values_label
 from first_commit.setup_command import (
     CHECK_HOOK_COMMAND,
     CHECK_HOOK_ID,
@@ -49,11 +50,17 @@ def _setup_context(plan: SetupPlan, *, dry_run: bool) -> tuple[str, ...]:
         if os.environ.get("PRE_COMMIT_HOME")
         else "pre-commit default"
     )
-    hook_source = (
-        "Hook source: existing project-owned configuration retained"
-        if plan.existing_hooks
-        else f"Hook source: {transport} ({source})"
-    )
+    if plan.existing_hooks and source == LOCAL_REPOSITORY:
+        hook_source = (
+            "Hook source: existing project-owned configuration retained; "
+            "--hooks installed shapes only a new hook file"
+        )
+    elif plan.existing_hooks:
+        hook_source = "Hook source: existing project-owned configuration retained"
+    elif source == LOCAL_REPOSITORY:
+        hook_source = "Hook source: the first-commit command on PATH (repo: local)"
+    else:
+        hook_source = f"Hook source: {transport} ({source})"
     return (
         hook_source,
         f"Hook cache: {cache}",
@@ -92,8 +99,13 @@ def _record_lines(plan: SetupPlan, *, dry_run: bool) -> tuple[str, ...]:
         + PRIVATE_VALUES_PATH
         + "; add one private value per line"
     )
-    if plan.user_values_exist:
+    if plan.user_list is UserList.APPLIES:
         values_line += f"; {user_values_label()} also applies"
+    elif plan.user_list is UserList.KEPT:
+        values_line += (
+            f"; {user_values_label()} is kept in this repository, so it does not "
+            "apply here"
+        )
     return (
         files_line,
         *kept_lines,

@@ -66,7 +66,7 @@ class CheckGitErrorTest(unittest.TestCase):
             "fix: run first-commit in a Git checkout, or run `first-commit setup` to "
             "create one; `git status` in that folder shows Git's own error.\n"
         )
-        self.assertEqual((4, "", expected), run_check(self.root))
+        self.assertEqual((1, "", expected), run_check(self.root))
 
     def test_a_corrupt_index_names_the_git_subcommand_and_a_fix(self) -> None:
         initialize_repository(self.root)
@@ -77,7 +77,7 @@ class CheckGitErrorTest(unittest.TestCase):
         fixture_git(self.root, "add", "--", "README.md")
         (self.root / ".git/index").write_bytes(b"DIRC corrupt")
         code, output, error = run_check(self.root)
-        self.assertEqual((4, ""), (code, output))
+        self.assertEqual((1, ""), (code, output))
         self.assertRegex(error, GIT_FAILURE)
 
 
