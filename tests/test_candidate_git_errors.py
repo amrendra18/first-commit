@@ -19,6 +19,8 @@ class BlobSizeGitErrorTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         initialize_repository(self.root)
+        git(self.root, "config", "user.name", "Test")
+        git(self.root, "config", "user.email", "test@example.com")
         (self.root / "a.txt").write_text("text\n", encoding="utf-8")
         git(self.root, "add", "--", "a.txt")
         git(self.root, "commit", "-q", "--no-verify", "-m", "add a")

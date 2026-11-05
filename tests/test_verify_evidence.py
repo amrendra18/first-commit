@@ -32,6 +32,8 @@ class RunFactsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             initialize_repository(root)
+            run_git(root, "config", "user.name", "Test")
+            run_git(root, "config", "user.email", "test@example.com")
             (root / "a.txt").write_text("a\n", "utf-8")
             run_git(root, "add", "a.txt")
             run_git(root, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "one")

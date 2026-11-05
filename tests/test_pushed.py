@@ -28,7 +28,7 @@ from tests.gitleaks_support import (
     needs_real_scanner,
     pushed_base_commit,
 )
-from tests.support import initialize_repository, run_git
+from tests.support import configure_remote, initialize_repository, run_git
 
 START = "a" * 40
 END = "b" * 40
@@ -155,7 +155,7 @@ class PushedScopeTest(unittest.TestCase):
                 commit_fixture(root, "a.txt")
                 second = _head(root)
                 run_git(root, "remote", "add", "origin", "https://example.invalid/o")
-                run_git(root, "remote", "add", nested, "https://example.invalid/x")
+                configure_remote(root, nested, "https://example.invalid/x")
                 run_git(root, "update-ref", "refs/remotes/origin/main", first)
                 run_git(root, "update-ref", "refs/remotes/origin/x/deep/main", second)
 
@@ -357,7 +357,7 @@ class RealPushScanTest(unittest.TestCase):
         run_git(self.root, "checkout", "-q", "-b", "side")
         side = self.secret_commit("side.txt")
         run_git(self.root, "checkout", "-q", "main")
-        run_git(self.root, "remote", "add", "origin/x", "https://example.invalid/x")
+        configure_remote(self.root, "origin/x", "https://example.invalid/x")
         run_git(self.root, "update-ref", "refs/remotes/origin/x/main", side)
 
         findings = scan_pushed(self.root, PushedScope(main, "origin"), max_findings=1)
