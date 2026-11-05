@@ -85,8 +85,25 @@ class CliLauncherTest(unittest.TestCase):
                 self.assertTrue(
                     lines[1].startswith(str(root / ".local" / "bin") + os.pathsep)
                 )
-                self.assertEqual("-m first_commit.cli version", lines[2])
+                self.assertEqual("-P -m first_commit.cli version", lines[2])
                 self.assertEqual("active" if active else ".venv", lines[3])
+
+    def test_checkout_launcher_ignores_a_tool_copy_in_the_current_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            planted = folder / "first_commit"
+            planted.mkdir()
+            (planted / "__init__.py").write_text("", "utf-8")
+            (planted / "cli.py").write_text('print("planted")\n', "utf-8")
+            result = subprocess.run(
+                [str(PROJECT / "bin" / "first-commit"), "version"],
+                cwd=folder,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        self.assertEqual((0, __version__), (result.returncode, result.stdout.strip()))
 
     def test_checkout_launcher_refuses_python_older_than_3_11(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
