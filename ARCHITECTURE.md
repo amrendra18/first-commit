@@ -79,6 +79,8 @@ Every command keeps these rules. Changing one is a design change.
    `git init` makes `.git`. Git runs with fixed arguments, no shell, a
    timeout, and an environment without prompts, config injection, object
    replacement, or partial-clone fetches. Relative `PATH` entries are dropped.
+   `bin/first-commit` starts Python with `-P`, so the current folder is not on
+   the import path.
 5. Paths are normalized and confined before reading. Reads, file counts,
    findings, and messages are bounded; see [Limits](#limits).
 6. Hooks are pinned to a 40-character commit SHA. Setup refuses a tag, because

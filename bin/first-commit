@@ -20,4 +20,5 @@ if ! running="$("$python_command" -c "$probe" 2>/dev/null)"; then
 fi
 export PYTHONPATH="$project_dir/src"
 export PATH="$project_dir/.local/bin:$PATH"
-exec "$python_command" -m first_commit.cli "$@"
+# -P keeps the current folder off the import path, so a repository cannot replace this package.
+exec "$python_command" -P -m first_commit.cli "$@"
