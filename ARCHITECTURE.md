@@ -75,7 +75,11 @@ All modules live in `src/first_commit/`.
       hold, merges included, must carry a `gpgsig` or
       `gpgsig-sha256` header; a commit without one is a `git.unsigned-commit`
       finding that names its short id. The hook checks only that the header
-      is there, never the signature itself.
+      is there, never the signature itself. A commit whose committer time
+      is older than the clone's setup, the time of
+      `.local/first-commit/contributor.json`, is skipped, so adopting
+      first-commit needs no rewrite of older history. With no such record,
+      no commit is skipped.
    4. The privacy rules on each file version those commits add or change, so
       a private value that a later commit deletes still blocks the push; a
       merge's files count only where they differ from every parent. Such a
@@ -141,7 +145,8 @@ Every command keeps these rules. Changing one is a design change.
    `GIT_CONFIG_COUNT`, which beat every configuration file: no color, the root
    commit shown, no signature lines, the default header, date, and path prefixes, the default
    512 MiB binary-file size, and no user attributes file. Relative `PATH`
-   entries are dropped.
+   entries are dropped. `bin/first-commit` starts Python with `-P`, so a file
+   in the current folder cannot replace the tool.
 5. Paths are normalized and confined before reading. Reads, file counts,
    findings, and messages are bounded; see [Limits](#limits).
 6. Pinned hooks, the default, are pinned to a 40-character commit SHA. Setup
@@ -188,7 +193,7 @@ Every command keeps these rules. Changing one is a design change.
 | Command | What it does |
 | --- | --- |
 | `first-commit setup` | Plans and applies the one-time setup |
-| `first-commit check` | Checks the working tree, the staged files, and the whole history; `--new-only` checks only the commits no configured remote holds |
+| `first-commit check` | Checks the working tree, the staged files, and the whole history, and reports each unsigned commit since setup that no configured remote holds; `--new-only` checks only the commits no configured remote holds |
 | `first-commit doctor` | Checks the identity, signing, hooks, and scanner of this checkout |
 | `first-commit version` | Prints the installed version; `--version` does the same |
 | `first-commit hook <stage>` | Runs one Git hook stage; the installed Git hooks call it |
@@ -613,7 +618,9 @@ Known gaps:
     it stays on, but `git commit --no-gpg-sign` makes an unsigned commit that
     the commit hooks pass. The pre-push hook stops that commit, but only checks
     that a signature is there: a signature by another key, or one that does not
-    verify, passes.
+    verify, passes. It trusts two times a person can change: a commit with
+    `GIT_COMMITTER_DATE` set before the setup, or a contributor record with a
+    later file time, skips the check.
 11. The history scan of `check` looks for private values in commit and tag
     messages only, not in the files of commits. A private value committed
     with `--no-verify` and deleted in a later commit passes `check`; the

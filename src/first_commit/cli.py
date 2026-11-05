@@ -16,6 +16,7 @@ from first_commit.candidates import CandidateError
 from first_commit.characters import escaped_controls
 from first_commit.contributor import ContributorError
 from first_commit.executables import find_executable
+from first_commit.finding_collector import FindingCollector
 from first_commit.fixes import UNNAMED_MAIN_WORKTREE, linked_main_worktree
 from first_commit.git import (
     GitError,
@@ -51,6 +52,7 @@ from first_commit.private_values import (
     masked_result,
 )
 from first_commit.pushed import HistoryRange, PushedScope, pushed_scope
+from first_commit.pushed_signatures import unsigned_since_setup_findings
 from first_commit.reporting import (
     json_value,
     next_action_line,
@@ -161,16 +163,27 @@ def _color() -> bool:
     return sys.stdout.isatty() and "NO_COLOR" not in os.environ
 
 
+def _checked_history(
+    root: Path, policy: Policy, scope: HistoryRange | None, values: tuple[str, ...]
+) -> Result:
+    found = FindingCollector(policy.max_findings)
+    whole = validation.history(root, policy, scope, values, warn_on_remote=True)
+    found.add(whole.findings, not_shown=whole.not_shown)
+    found.add(
+        unsigned_since_setup_findings(
+            root, max_bytes=policy.max_message_bytes, max_findings=found.room
+        )
+    )
+    return found.result("history")
+
+
 def _checks(
     root: Path, policy: Policy, values: tuple[str, ...], scope: HistoryRange | None
 ) -> Iterator[tuple[str, Result]]:
     yield "doctor", validation.doctor(root, policy)
     yield "working", validation.working(root, policy, values)
     yield "staged", validation.staged(root, policy, values)
-    yield (
-        "history",
-        validation.history(root, policy, scope, values, warn_on_remote=True),
-    )
+    yield "history", _checked_history(root, policy, scope, values)
 
 
 # A push sends commits only, so the working tree and the index stay at commit time.

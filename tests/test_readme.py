@@ -386,7 +386,8 @@ class PublicFactsTest(unittest.TestCase):
 
     def test_push_row_names_only_what_the_push_scan_reads(self) -> None:
         self.assertIn(
-            "| Push | Signatures, plus secrets, keys, home paths, emails, private values, "
+            "| Push | Signatures (commits since setup), plus secrets, keys, home paths, "
+            "emails, private values, "
             "and file size in the pushed commits, their messages, and tags |",
             README,
         )

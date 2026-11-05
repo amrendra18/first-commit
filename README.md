@@ -33,7 +33,7 @@ Then the hooks check every commit and push:
 | --- | --- |
 | Commit | Secrets, keys and tokens, home paths, unapproved emails, your private values, forbidden paths, dotenv files, `@no-commit` markers, text hygiene, required documents |
 | Commit message | Format and review sections, secrets, private values, identity, and signing settings |
-| Push | Signatures, plus secrets, keys, home paths, emails, private values, and file size in the pushed commits, their messages, and tags |
+| Push | Signatures (commits since setup), plus secrets, keys, home paths, emails, private values, and file size in the pushed commits, their messages, and tags |
 
 A finding prints a `fix:` line, never the matched text.
 
@@ -205,7 +205,7 @@ Both are read-only ([two exceptions](ARCHITECTURE.md#security-rules)). Add
    ([details](ARCHITECTURE.md#private-values)).
 2. **Project facts.** `.repo-policy.json` holds approved public emails,
    forbidden paths, and reviewed exceptions. No field turns off a check.
-   Stage an edit to it before the commit that needs it. The fields are in
+   Stage an edit to it before the commit that needs it. Fields:
    [ARCHITECTURE.md](ARCHITECTURE.md#project-policy-file).
 3. **False positives.** A reviewed Gitleaks false positive goes in
    `.gitleaksignore`; see

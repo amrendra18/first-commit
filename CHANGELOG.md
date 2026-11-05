@@ -53,7 +53,9 @@ Added:
 9. The pre-push hook stops a pushed commit with no signature, such as one
    made with `git commit --no-gpg-sign`, as `git.unsigned-commit`. It checks
    only that a signature is there, and its fix line re-signs the unpushed
-   commits.
+   commits. A commit older than the clone's setup is skipped, so adopting
+   first-commit needs no rewrite of older history. `check` reports the same
+   unsigned commits before the push.
 10. The pre-push hook runs the privacy rules on each file version the pushed
     commits add or change, so a private value committed with `--no-verify`
     and deleted in a later commit still blocks the push. A finding names the
@@ -66,25 +68,28 @@ Added:
 
 Changed:
 
-1. The README installs the command into `~/.local/bin` and runs
+1. Security: `bin/first-commit` no longer runs a `first_commit/cli.py` from the
+   current folder, so a repository cannot replace a checkout's launcher. A pip
+   install was never affected.
+2. The README installs the command into `~/.local/bin` and runs
    `first-commit` from PATH; the `FIRST_COMMIT` shell variable is gone. It
    names what install writes, its network use, and the state folder
    `~/.config/first-commit` with its `XDG_CONFIG_HOME` override.
-2. The README no longer says the hooks stop an unsigned commit, or that the
+3. The README no longer says the hooks stop an unsigned commit, or that the
    push checks pushed file contents for private values.
    [Known gaps](ARCHITECTURE.md#threats-and-known-gaps) names both. The
    README covers clones and upgrades with `--hooks installed`.
-3. `scripts/release` prints the release steps in order: push the branch, wait
+4. `scripts/release` prints the release steps in order: push the branch, wait
    for a green CI run on that commit on Linux and macOS, then push the tag.
-4. Every Git process first-commit or Gitleaks starts gets fixed display
+5. Every Git process first-commit or Gitleaks starts gets fixed display
    settings, and the pathspec variables are removed, so a user setting such
    as `color.ui = always` no longer hides a secret from the scan.
-5. A history or push secret finding names its commit, and its fix line says
+6. A history or push secret finding names its commit, and its fix line says
    how to remove it from that commit.
-6. A `bin/first-commit` hook entry counts as first-commit's hook only in
+7. A `bin/first-commit` hook entry counts as first-commit's hook only in
    first-commit's own checkout. A PATH folder inside the repository is refused
    even when it links outside.
-7. Ignored env-shaped files no longer count toward the 10,000-path limit.
+8. Ignored env-shaped files no longer count toward the 10,000-path limit.
    Policy errors end with a fix line that lists the accepted fields. A bad
    message header also reports missing sections. In a linked worktree, the
    setup-naming fix lines point to the main worktree.
