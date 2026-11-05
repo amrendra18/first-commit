@@ -37,13 +37,13 @@
 
 ## Invariants
 
-1. The command exits only with 0, 1, 2, or 5, the codes of tool contract 1.1,
-   and `ARCHITECTURE.md` lists the codes it uses; the checkout launcher too.
+1. The command exits only with 0, 1, 2, or 5, and `ARCHITECTURE.md` lists the
+   codes it uses; the checkout launcher too.
    Test: `tests.test_metadata.MetadataTest.test_reference_exit_codes_match_the_command`,
    `tests.test_contract.ToolContractTest.test_exit_codes_are_the_contract_table`,
    and `tests.test_cli_launchers.CliLauncherTest.test_checkout_launcher_refuses_python_older_than_3_11`.
-2. `bin/first-commit` meets the probes of tool contract 1.1, section 9. Test:
-   `tests.test_contract`.
+2. `bin/first-commit` answers every probe a caller relies on: help, exit codes,
+   JSON errors, and install documents. Test: `tests.test_contract`.
 3. The README stays at most 1,500 words after its banner. Test:
    `tests.test_metadata.MetadataTest.test_readme_stays_a_short_entry_point`.
 
