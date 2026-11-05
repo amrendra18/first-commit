@@ -91,7 +91,6 @@ class Parser(argparse.ArgumentParser):
         raise _argument_error(self.prog, detail(self.prog, message))
 
 
-# The epilog comes from help_text.HELP, under the words after the program name.
 def _command(
     commands: "argparse._SubParsersAction[Parser]", name: str, description: str
 ) -> Parser:
@@ -257,7 +256,6 @@ def build_parser() -> Parser:
     return parser
 
 
-# --version takes only --format, so it needs no verb.
 def _version_parser() -> Parser:
     parser = Parser(prog=PROGRAM, add_help=False, allow_abbrev=False)
     parser.add_argument("--version", action="store_true")
@@ -278,7 +276,6 @@ def _accepted_flags(parser: argparse.ArgumentParser, verbs: Sequence[str]) -> st
 def _unaccepted(
     prog: str, name: str, arguments: Sequence[str], extra: str, flags: str
 ) -> ArgumentError:
-    # The position is known only when the extra word appears once.
     if list(arguments).count(extra) == 1:
         which = f"argument {list(arguments).index(extra) + 1}"
     else:

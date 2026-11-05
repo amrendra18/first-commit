@@ -111,8 +111,6 @@ class PrePushScopeTest(TemporaryRootTest):
 
 
 class FirstPushLimitTest(TemporaryRootTest):
-    # A first push to a new remote: the other local branch puts the whole push set
-    # over the limit, and the pushed branch alone fits it.
     def test_a_first_push_past_the_limit_reads_the_pushed_branch(self) -> None:
         pushed_base_commit(self.root)
         (self.root / "new.txt").write_text(f"x {CANARY}\n", encoding="utf-8")

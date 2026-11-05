@@ -56,7 +56,6 @@ class _Rules(NamedTuple):
     vendor: Mapping[str, str]
 
 
-# Without a committed policy, no exception applies, as in the staged check.
 def without_exceptions(policy: Policy) -> Policy:
     return replace(
         policy,

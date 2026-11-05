@@ -24,8 +24,6 @@ class PushLimitTest(TemporaryRootTest):
             parse_policy(b'{"schema_version":1}', self.root), max_files=1
         )
 
-    # The count is one cheap Git call, so a push past the limit fails before
-    # Gitleaks, the message scan, and the privacy rules read any commit.
     def test_a_push_past_the_version_limit_stops_before_any_scan(self) -> None:
         with (
             mock.patch("first_commit.validation.history") as history,
@@ -41,7 +39,6 @@ class PushLimitTest(TemporaryRootTest):
         blobs.assert_not_called()
         signed.assert_not_called()
 
-    # Git reads <id>:<branch> as a new branch only with refs/heads/ in front.
     def test_each_fix_line_names_a_refspec_git_accepts_for_a_new_branch(self) -> None:
         for scope in (PushedScope(self.head, "origin"), None):
             with (

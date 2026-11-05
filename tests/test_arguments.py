@@ -19,7 +19,6 @@ READS = "reads"
 CHECKS = "reads, writes own state"
 SETS_UP = "writes repository, writes own state, network github.com, network pypi.org"
 STAGES = ("pre-commit", "commit-msg", "pre-push", "setup")
-# Each verb, with the effects and exit codes contract 3.1 and 2.5 give it.
 VERB_HELP = {
     ("version",): (READS, [0, 1, 2]),
     ("check",): (CHECKS, [0, 1, 2]),
@@ -69,8 +68,6 @@ def _run(*words: str) -> tuple[int, str, str]:
     return code, output.getvalue(), error.getvalue()
 
 
-# The last two paragraphs of a help text: the Writes, Before, and Effects lines, each
-# with its wrapped lines joined, and the codes the Exit codes paragraph names.
 def _fields(text: str) -> tuple[dict[str, str], list[int]]:
     *_, lines, codes = text.rstrip().split("\n\n")
     fields: dict[str, str] = {}

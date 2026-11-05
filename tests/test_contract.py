@@ -36,7 +36,6 @@ EFFECT = re.compile(
 ERROR_CODE = re.compile(r"[a-z]+(-[a-z]+)*")
 FLAG = re.compile(r"--[A-Za-z][\w-]*")
 NOT_VERB_FLAGS = {"--help", "--version", "--no-such-flag"}
-# A verb row in the top help: four spaces, then the name. Wrapped text is indented more.
 LISTED_VERB = re.compile(r"^ {4}([a-z][a-z-]*)(?:\s|$)", re.MULTILINE)
 
 
@@ -257,7 +256,6 @@ class ToolContractTest(unittest.TestCase):
             self.assertEqual([], list(state.iterdir()), state)
 
     def test_exit_codes_are_the_contract_table(self) -> None:
-        # Read from the command's own help, so the run tests this checkout's code.
         top = self.call("--help")
         self.assertEqual({0, 1, 2, 5}, set(exit_code_items(top.stdout) or []))
 

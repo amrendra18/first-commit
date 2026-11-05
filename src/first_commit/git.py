@@ -425,7 +425,6 @@ def parse_batch_check(raw: bytes, count: int) -> list[ObjectInfo | None]:
     return parsed
 
 
-# The one `git cat-file --batch-check` call: an answer per name, None when missing.
 def batch_check(root: Path, names: Sequence[str]) -> list[ObjectInfo | None]:
     if not names:
         return []

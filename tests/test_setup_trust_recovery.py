@@ -14,7 +14,6 @@ from tests.setup_support import REVISION, SetupFixture, synthetic_key
 from tests.support import run_git
 
 README = (Path(__file__).resolve().parents[1] / "README.md").read_text("utf-8")
-# The shell block of the README recovery step for a wrong identity or key.
 RECOVERY = (
     README.split("**Wrong identity or key.**", 1)[1]
     .split("```sh\n", 1)[1]
@@ -103,8 +102,6 @@ class TrustRecoveryTest(SetupFixture):
             ["sh", "-e", "-c", RECOVERY], cwd=self.root, check=True, capture_output=True
         )
 
-    # Security rule 9 holds with the setting set too: setup never keeps a file of
-    # its own that lacks your key, as when the recovery keeps the old file.
     def test_a_kept_setting_does_not_keep_a_file_without_your_key(self) -> None:
         old = self.contributor(self.person.email, self.synthetic("old", b"\x01" * 32))
         self.trust(old)
@@ -120,8 +117,6 @@ class TrustRecoveryTest(SetupFixture):
         self.assertEqual(line, (self.root / ALLOWED_SIGNERS_PATH).read_bytes())
         self.assertEqual([ALLOWED_SIGNERS_PATH], self.settings())
 
-    # Without --trust-self, setup keeps the setting and writes nothing, so it must
-    # not report trust while the file the setting names is gone.
     def test_setup_without_trust_names_the_missing_file_and_the_command(self) -> None:
         old = self.contributor(self.person.email, self.synthetic("old", b"\x04" * 32))
         self.trust(old)

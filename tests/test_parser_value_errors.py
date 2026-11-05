@@ -14,9 +14,7 @@ from first_commit.policy import parse_policy
 from first_commit.policy_fields import PolicyError
 from tests.cli_support import CliFixture
 
-# Python 3.11 and later refuse to read an integer over 4,300 digits with ValueError.
 HUGE_NUMBER = "9" * 5000
-# PyYAML reads this as a date and raises ValueError: February has no 30th day.
 IMPOSSIBLE_DATE = "2001-02-30"
 RECORD = (
     '{"schema_version":1,"name":"N","email":"n@example.com","signing_key":"k.pub",'

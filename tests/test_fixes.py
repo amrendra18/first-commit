@@ -149,7 +149,6 @@ class FixesTest(unittest.TestCase):
             HOOK_FIXES["hooks.push-revision"],
         )
 
-    # Setup with trust writes its own missing file again, so no unset comes first.
     def test_the_missing_signers_file_fix_runs_trust_without_an_unset(self) -> None:
         for fixes, trust in (
             (HOOK_FIXES, f"FIRST_COMMIT_TRUST_SELF=1 {SETUP_HOOK_COMMAND}"),
@@ -307,7 +306,6 @@ class FixesTest(unittest.TestCase):
         document = replace(finding, path="README.md")
         self.assertEqual(HOOK_FIXES["scaffold.no-commit"], fix_for(document))
 
-    # A pushed commit takes its exceptions from its own policy, never the index.
     def test_a_pushed_file_approval_goes_in_the_policy_of_that_commit(self) -> None:
         for rule in APPROVAL_RULES[1:]:
             with self.subTest(rule=rule):
@@ -323,8 +321,6 @@ class FixesTest(unittest.TestCase):
                 self.assertIn("in the .repo-policy.json of commit abc1234", fix)
                 self.assertIn("Make the change in commit abc1234 itself", fix)
 
-    # Tracking refs can be older than the remote, so a push reads commits it holds;
-    # check findings get no push advice.
     def test_only_a_push_finding_in_a_commit_says_to_fetch_first(self) -> None:
         fetch = (
             "When the remote already holds commit abc1234, run git fetch <remote>, "

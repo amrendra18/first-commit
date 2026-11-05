@@ -250,7 +250,6 @@ class UserPrivateValuesCliTest(UserListFixture):
             self.input_error(),
         )
 
-    # One comment line too long: an unlimited read would skip it and go on.
     def test_an_oversize_user_list_stops_the_run(self) -> None:
         self.write_user_list(self.user_list, text="#" * MAX_PRIVATE_VALUES_BYTES + "\n")
         self.assertIn(

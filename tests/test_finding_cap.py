@@ -14,7 +14,6 @@ from tests.support import initialize_repository, run_git
 
 CAP = 1000
 SCISSORS = "# ------------------------ >8 ------------------------\n"
-# One unapproved address per line: each is one finding.
 EMAILS = "".join(f"- person{number}@contrib-mail.org\n" for number in range(CAP + 1))
 HOME_LINE = "- Built in /Users/" + "someone/work.\n"
 

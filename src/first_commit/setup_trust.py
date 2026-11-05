@@ -211,9 +211,6 @@ def trust_plan(
     if not trust_self:
         return None
     setting = settings.get(TRUST_SETTING)
-    # A setting that names another file is the person's own, so it is kept unread.
-    # One that names setup's file gets the same checks as the file alone, and the
-    # file is written again when it is missing, as after a change of key.
     if setting and setting != ALLOWED_SIGNERS_PATH:
         return TrustPlan(TrustAction.KEEP_SETTING)
     existing = read_if_present(confined_path(root, ALLOWED_SIGNERS_PATH))

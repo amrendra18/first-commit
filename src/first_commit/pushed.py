@@ -12,8 +12,6 @@ REMOTE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}")
 # A local branch by its full name. The characters leave out every option and
 # revision syntax but "..", which is refused on its own.
 LOCAL_BRANCH = re.compile(r"refs/heads/[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}")
-# The commits check and check --new-only read: every ref but the stash. The push
-# checks read another set (see PUSHED_REFS).
 HISTORY_REVISIONS = ("--exclude=refs/stash", "--all")
 # The push set, which the secret, message, and file checks read (see
 # push_revisions): the commits on the pushed ref, every local branch, and every

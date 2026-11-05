@@ -107,8 +107,6 @@ class ErrorCauseTest(CliFixture):
         self.assertIn("`git status` answers", str(value["message"]))
 
     def test_a_git_timeout_under_a_wrapper_is_a_limit_exceeded_error(self) -> None:
-        # The candidate listing wraps a Git failure in its own error; a timeout
-        # under it still names the limit.
         timeout = GitTimeoutError(("ls-files", "--stage"))
         with patch("first_commit.candidates.run_git", side_effect=timeout):
             code, value = self.error_object("check")

@@ -269,8 +269,6 @@ def _unreadable_copy_findings(
     return capped(findings, max_findings)
 
 
-# Checks the working copy of each clean-filter file, as filtered_staged_paths names
-# them; a finding both copies give is reported once.
 def _add_filtered_copy_findings(
     found: FindingCollector,
     copies: LoadedCandidates,

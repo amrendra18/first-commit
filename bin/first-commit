@@ -19,7 +19,6 @@ if ! running="$("$python_command" -c "$probe" 2>/dev/null)"; then
   exit 1
 fi
 export PYTHONPATH="$project_dir/src"
-# The CLI names this path in the next commands of a JSON error object.
 export FIRST_COMMIT_EXECUTABLE="$project_dir/bin/first-commit"
 export PATH="$project_dir/.local/bin:$PATH"
 # -P keeps the current folder off the import path, so a repository cannot replace the tool.

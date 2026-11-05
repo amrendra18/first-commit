@@ -228,7 +228,6 @@ def _setup_fixes(setup: str, trust: str, revision_source: str = "") -> dict[str,
     }
 
 
-# The fixes that send the person to setup, which refuses a linked worktree.
 SETUP_NAMING_RULES = (
     *SETUP_RULES,
     *CONTRIBUTOR_RULES,
@@ -362,7 +361,6 @@ def _message_fix(finding: Finding) -> str | None:
     return TAG_MESSAGE_FIX if finding.path == TAG_MESSAGE_PATH else None
 
 
-# A history or push finding in a commit: the fix names that commit.
 def _commit_fix(finding: Finding) -> str | None:
     commit = finding.commit
     if commit is None:

@@ -77,8 +77,6 @@ class UnreadableFileTest(CliFixture):
         )
 
     def test_a_non_ascii_value_and_a_control_character_stay_hidden(self) -> None:
-        # The mask runs on the raw path, then control characters are escaped, so a
-        # non-ASCII value is masked and an escape byte never reaches the terminal.
         canary = "josé-unreadable-canary"
         values = self.root / ".local/first-commit/private-values.txt"
         values.parent.mkdir(parents=True)

@@ -71,7 +71,6 @@ class CommitHookSigningSettingsTest(unittest.TestCase):
     def test_the_commit_msg_hook_blocks_each_setting_turned_off(self) -> None:
         required = {rule_id for _, rule_id, _ in REQUIRED}
         self.assertEqual(set(), self.rules()[0] & required)
-        # The hook reads the real Git config; each run turns one setting off.
         for key, rule_id, values in REQUIRED:
             with self.subTest(key=key, value=values[-1]):
                 run_git(self.root, "config", "--local", key, values[-1])

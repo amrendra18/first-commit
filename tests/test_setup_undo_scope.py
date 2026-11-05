@@ -16,13 +16,10 @@ from tests.setup_support import REVISION, SetupFixture
 REQUEST = SetupRequest(revision=REVISION, trust_self=True, confirmed=True)
 UNDONE = "Setup stopped on Ctrl-C; its changes were undone."
 SCANNER = b"synthetic scanner"
-# The Git call that fails: the second setting setup writes.
 FAILED_CALL = 2
 
 
 class ConcurrentConfigTest(SetupFixture):
-    # Another process writes a setting and holds .git/config.lock, so setup's own
-    # second git config fails without writing anything.
     def test_a_failed_git_config_keeps_another_writers_setting(self) -> None:
         self.initialized_with_hooks()
         calls = []
@@ -50,9 +47,6 @@ class ConcurrentConfigTest(SetupFixture):
 
 
 class ScannerSignalTest(SetupFixture):
-    # The real install_scanner links .local/bin/gitleaks, unlinks its temporary
-    # file, and returns; a Ctrl-C after the link and before setup records the
-    # scanner lands here.
     def install_scanner(self, root: Path) -> bool:
         super().install_scanner(root)
         os.kill(os.getpid(), signal.SIGINT)
@@ -80,8 +74,6 @@ class ScannerSignalTest(SetupFixture):
 
 
 class ScannerAppearedFirstTest(SetupFixture):
-    # Another process puts the pinned binary there after setup found the path free;
-    # install_scanner then keeps it and returns False, and a later failure undoes.
     def install_scanner(self, root: Path) -> bool:
         super().install_scanner(root)
         return False

@@ -172,7 +172,6 @@ class SetupPreviewTest(SetupFixture):
         repeated = setup_repository(self.root, SetupRequest(revision=REVISION))
         self.assertIn("Private values: retained" + also, repeated)
 
-    # Setup uses the rule check uses: only a tracked file is kept here.
     def test_setup_says_a_user_list_this_repository_tracks_does_not_apply(
         self,
     ) -> None:

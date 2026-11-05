@@ -159,7 +159,6 @@ class PushedSignatureTest(TemporaryRootTest):
 
     @needs_real_scanner
     def test_an_unsigned_commit_on_a_second_pushed_branch_is_reported(self) -> None:
-        # pre-commit names only the first ref of `git push origin alpha beta`.
         pushed_base_commit(self.repository)
         self.sign_commits()
         _commit(self.repository, "feat: alpha")
@@ -203,7 +202,6 @@ class PushedSignatureTest(TemporaryRootTest):
 
     @needs_real_scanner
     def test_the_first_push_of_a_new_repository_is_checked(self) -> None:
-        # pre-commit names no pushed ref when the push holds a root commit.
         initialize_repository(self.repository)
         (self.repository / ".repo-policy.json").write_text(
             '{"schema_version":1}\n', "utf-8"
@@ -350,7 +348,6 @@ class CommitHeaderTest(TemporaryRootTest):
         return commit
 
     def test_history_another_configured_remote_holds_is_not_reported(self) -> None:
-        # Another remote's commits, such as a fork's upstream, are not ours to sign.
         upstream = self.write_commit("", "upstream\n")
         for remote in ("upstream", "fork"):
             run_git(self.root, "remote", "add", remote, "https://example.invalid/r")
@@ -374,8 +371,6 @@ class CommitHeaderTest(TemporaryRootTest):
         self.assertEqual([side[:12]], [finding.commit for finding in found])
 
     def test_tags_and_notes_that_name_unsigned_commits_are_not_read(self) -> None:
-        # The remote may hold a tag already, and a notes commit is never signed; a
-        # ref of no configured remote is read, as a push may send it as a later ref.
         tagged = self.write_commit("", "tagged\n")
         run_git(self.root, "update-ref", "refs/tags/v1", tagged)
         noted = self.write_commit("", "noted\n")
@@ -390,7 +385,6 @@ class CommitHeaderTest(TemporaryRootTest):
 
         self.assertEqual([other[:12]], [finding.commit for finding in found])
 
-    # One function in pushed.py chooses the signature check's commits.
     def test_the_signature_check_reads_its_own_revisions(self) -> None:
         signed = self.write_commit("gpgsig-sha256 signature\n", "main\n")
         unsigned = self.child(signed, "side\n", "refs/heads/side")

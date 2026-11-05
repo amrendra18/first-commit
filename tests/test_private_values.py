@@ -189,7 +189,6 @@ class PrivateValuesTest(unittest.TestCase):
 
 
 class UserValuesPathTest(unittest.TestCase):
-    # The XDG base directory rules ignore a relative path.
     def test_a_relative_config_home_counts_as_unset(self) -> None:
         for config, path, label in (
             ("/x", "/x", "$XDG_CONFIG_HOME"),
@@ -259,7 +258,6 @@ class HomeRepositoryTest(UserListFixture):
                 self.assertNotIn(CANARY, output + error)
                 self.assertNotIn("kept in this repository", error)
 
-    # A repository that tracks its own copy of the list, committed once.
     def list_repository(self, folder: Path) -> Path:
         folder.mkdir(exist_ok=True)
         initialize_repository(folder)
@@ -341,8 +339,6 @@ class HomeRepositoryTest(UserListFixture):
         self.user_list.symlink_to(folder / "terms.txt")
         self.assert_skipped(self.root)
 
-    # Git runs a linked worktree's hook with GIT_INDEX_FILE set to that worktree's
-    # index, which lies inside the main worktree's .git folder.
     def hook_index(self, linked: Path) -> dict[str, str]:
         return {
             "GIT_INDEX_FILE": str(self.root / ".git/worktrees" / linked.name / "index")
@@ -440,8 +436,6 @@ class HomeRepositoryTest(UserListFixture):
         with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config)}):
             self.assert_applies(self.root)
 
-    # The decision follows the file that was opened, never the path seen before:
-    # the link is moved to a file outside right after it was resolved.
     def assert_applies_after(self, move: Callable[[Path], object]) -> None:
         outside = self.config / "outside.txt"
         self.user_list.symlink_to(self.kept)

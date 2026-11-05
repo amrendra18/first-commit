@@ -114,7 +114,6 @@ def _project_revision(root: Path) -> str | None:
 
 
 def _preflight_source(root: Path, source: str) -> None:
-    # Local hooks run the installed command, so pre-commit fetches nothing.
     if source == LOCAL_REPOSITORY:
         return
     if source not in APPROVED_REPOSITORIES:

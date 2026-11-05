@@ -194,8 +194,6 @@ class ReadmeTest(unittest.TestCase):
                 line = content.split("\n")[1]
                 self.assertEqual(hashlib.sha256(line.encode()).hexdigest(), digest)
 
-    # Releases are annotated tags: the tag's own id is not the commit pip
-    # installs, which setup and doctor compare with rev.
     def test_upgrade_pins_the_commit_of_an_annotated_tag(self) -> None:
         self.assertIn(
             "Run the `git ls-remote` line of [Install](#install) with the new tag. "

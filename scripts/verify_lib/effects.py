@@ -159,8 +159,6 @@ def feature_preview_matches_apply(run: Run) -> list[str]:
         exited(applied, 0, "setup in the same folder"),
         *prove_effects(run, folder, preview),
     ]
-    # An empty folder inside that repository: setup names the outer root and the
-    # git init route, and the route works as printed.
     nested = folder / "nested"
     nested.mkdir()
     inside, refusal = preview_setup(run, nested)

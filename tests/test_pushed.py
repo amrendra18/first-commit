@@ -64,8 +64,6 @@ class PushedScopeTest(unittest.TestCase):
             pushed_scope({"PRE_COMMIT_REMOTE_NAME": "origin"}),
         )
 
-    # pre-commit names no commit id for a push that holds a root commit, only the
-    # local ref; a full commit id or a refs/heads/ name is then the pushed ref.
     def test_a_push_without_a_to_ref_uses_the_local_branch(self) -> None:
         for branch in ("refs/heads/main", "refs/heads/feature/a-1.2", END):
             with self.subTest(branch=branch):

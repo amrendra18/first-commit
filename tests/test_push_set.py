@@ -24,7 +24,6 @@ def _head(root: Path) -> str:
     return run_git(root, "rev-parse", "HEAD").stdout.decode().strip()
 
 
-# Every push check reads one set: the commits the push's remote lacks.
 class PushSetTest(TemporaryRootTest):
     @needs_real_scanner
     def setUp(self) -> None:
@@ -45,7 +44,6 @@ class PushSetTest(TemporaryRootTest):
         if target is not None:
             run_git(self.root, "update-ref", f"refs/remotes/{name}/main", target)
 
-    # The commits each check reports, by rule; the message scan reports the canary.
     def reported(
         self, scope: PushedScope, root: Path | None = None
     ) -> dict[str, set[str]]:
@@ -63,7 +61,6 @@ class PushSetTest(TemporaryRootTest):
         messages = history_message_findings(
             root, self.policy, (CANARY,), MessageScope(scope), max_findings=100
         )
-        # Only a push finding's fix line says to fetch first.
         self.assertTrue(all(item.pushed for item in (*signatures, *files)))
         return {
             SIGNATURE: {item.commit or "" for item in signatures},
@@ -80,7 +77,6 @@ class PushSetTest(TemporaryRootTest):
         found = self.reported(PushedScope(new, "public"))
 
         self.assertEqual({private[:12]}, found[PRIVATE])
-        # Signing is the one check that skips what any configured remote holds.
         self.assertEqual({new[:12]}, found[SIGNATURE])
         self.assertEqual({private[:12]}, found["message"])
         self.assertEqual(
@@ -99,7 +95,6 @@ class PushSetTest(TemporaryRootTest):
             {SIGNATURE: {own[:12]}, PRIVATE: set(), "message": set()}, found
         )
 
-    # A fork syncs with git push origin upstream/main:main after git fetch upstream.
     def test_a_fork_push_of_fetched_upstream_commits_is_not_blocked(self) -> None:
         self.remote("origin", self.base)
         self.remote("upstream", self.base)
@@ -128,7 +123,6 @@ class PushSetTest(TemporaryRootTest):
 
     def test_a_remote_with_many_branches_leaves_all_of_them_out(self) -> None:
         self.remote("origin")
-        # One commit per remote branch, so each branch has its own tip.
         stream = []
         for number in range(BRANCHES):
             text = f"feat: {CANARY}" if number == 0 else f"feat: change {number}"
@@ -156,7 +150,6 @@ class PushSetTest(TemporaryRootTest):
             self.reported(scope),
         )
 
-    # git push public main private/feature:feature sends a ref of another remote.
     def test_a_second_pushed_ref_of_another_remote_is_read(self) -> None:
         run_git(self.root, "switch", "-q", "--detach")
         (self.root / "key.txt").write_bytes(CALIBRATION_INPUT)
@@ -176,7 +169,6 @@ class PushSetTest(TemporaryRootTest):
         self.assertEqual({feature[:12]}, found["message"])
         self.assertEqual(feature[:12], secret.commit)
 
-    # A tag on a commit no branch holds, such as a deleted release branch's.
     def test_a_tag_the_remote_holds_does_not_block_a_push(self) -> None:
         run_git(self.root, "switch", "-q", "-c", "release")
         tagged = self.add("notes.txt", f"by {CANARY}\n", f"chore: {CANARY}")
@@ -202,7 +194,6 @@ class PushSetTest(TemporaryRootTest):
             {SIGNATURE: {new[:12]}, PRIVATE: set(), "message": set()}, found
         )
 
-    # Backups, prefetch copies, and other local refs are no branch a push sends.
     def test_refs_outside_branches_and_remotes_are_not_read(self) -> None:
         self.remote("origin", self.base)
         for ref in (

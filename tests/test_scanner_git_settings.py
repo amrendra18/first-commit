@@ -85,7 +85,6 @@ class ScannerGitSettingsTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
-    # The key sits in the root commit; a later commit and a staged file follow.
     def plant_keys(self) -> str:
         self.write("root.cfg", SLACK_LINE)
         commit_fixture(self.root, "root.cfg")
@@ -137,8 +136,6 @@ class ScannerGitSettingsTest(unittest.TestCase):
                 scope = PushedScope(head, None)
                 self.assertEqual((), scan_pushed(self.root, scope, max_findings=10))
 
-    # With no allowed-signers file, log.showSignature makes Git print a verification
-    # error for each signed commit, which Gitleaks logs as a failed history read.
     @needs_real_scanner
     @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen is unavailable")
     def test_show_signature_leaves_a_signed_history_scan_complete(self) -> None:
@@ -184,8 +181,6 @@ class ScannerGitSettingsTest(unittest.TestCase):
 
         self.assert_found_at_every_scope(head)
 
-    # --no-textconv already stops the attributes file's textconv driver above; only
-    # the pinned core.attributesFile stops it from marking every file binary.
     @needs_real_scanner
     def test_a_user_attributes_file_that_marks_files_binary_hides_no_key(
         self,

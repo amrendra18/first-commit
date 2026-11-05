@@ -208,7 +208,6 @@ class GithubOwnerSegmentTest(unittest.TestCase):
             with self.subTest(content=content):
                 self.assertEqual([content.count(b"\n")], self.literal_lines(content))
 
-    # GitHub refuses these owner names, so the URL is not an owner URL.
     def test_an_owner_segment_github_would_refuse_is_still_private(self) -> None:
         for value, content in (
             ("private.owner", b"https://github.com/private.owner/tool\n"),

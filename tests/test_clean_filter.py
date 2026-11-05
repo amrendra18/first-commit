@@ -18,7 +18,6 @@ from tests.gitleaks_support import SLACK_LINE, commit_fixture, needs_real_scanne
 from tests.support import initialize_repository, run_git
 
 PRIVATE_VALUE = "alicecanary"
-# The clean filter stores one fixed line per line, as Git LFS stores a pointer.
 POINTER = b"version https://git-lfs.github.com/spec/v1\n"
 
 
@@ -28,7 +27,6 @@ class CleanFilterTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         initialize_repository(self.root)
-        # Each line becomes the first line of a Git LFS pointer, as git-lfs writes.
         run_git(
             self.root,
             "config",
@@ -160,8 +158,6 @@ class CleanFilterTest(unittest.TestCase):
         self.assertEqual(Severity.WARNING, large.severity)
 
     def test_a_staged_exception_is_checked_against_the_working_copy(self) -> None:
-        # The index holds one pointer line; the exception names line 3 of the real
-        # file and its digest, which the staged check reads.
         content = b"one\ntwo\nthree\n"
         self.stage("data.dat", content)
         digest = hashlib.sha256(content).hexdigest()
@@ -175,8 +171,6 @@ class CleanFilterTest(unittest.TestCase):
         self.assertEqual(1, len(check_ignore_file(self.root)))
 
     def test_a_filter_other_than_lfs_keeps_the_index_copy(self) -> None:
-        # An encrypting filter, such as git-crypt, stores a secret only encrypted,
-        # so its working copy is not read.
         run_git(self.root, "config", "filter.crypt.clean", "sed s/.*/encrypted/")
         (self.root / ".gitattributes").write_text("*.enc filter=crypt\n", "utf-8")
         run_git(self.root, "add", "--", ".gitattributes")
@@ -210,8 +204,6 @@ class CleanFilterTest(unittest.TestCase):
     def test_history_scans_never_check_an_lfs_exception_against_the_pointer(
         self,
     ) -> None:
-        # Line 1 is inside the one-line pointer, so a pointer check would compare
-        # its digest with the real file's and refuse the exception.
         content = b"one\ntwo\nthree\n"
         self.stage("data.dat", content)
         self.lfs_exception(content, 1)
@@ -222,9 +214,6 @@ class CleanFilterTest(unittest.TestCase):
         self.assertEqual(1, len(found))
 
     def test_real_bytes_stay_checked_where_lfs_is_named_only_later(self) -> None:
-        # A commit stored config.txt's real bytes; an unstaged attributes line now
-        # names lfs for it. The staged copy matches the exception, the committed
-        # one does not, and its real bytes are still checked.
         new = b"new\n"
         (self.root / "config.txt").write_bytes(b"old\n")
         (self.root / IGNORE_PATH).write_text(

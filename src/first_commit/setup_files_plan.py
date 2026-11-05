@@ -104,7 +104,6 @@ class FilesPlan(NamedTuple):
     kept: tuple[str, ...]
 
 
-# The onboarding text follows the hook file the project ends up with.
 def _onboarding_source(existing: bytes | None, options: SetupOptions) -> str:
     if existing is None:
         return options.source

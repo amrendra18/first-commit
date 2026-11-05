@@ -442,7 +442,6 @@ def filtered_candidates(
     return FilteredCandidates(loaded, unreadable)
 
 
-# A copy that changed since the size pass makes the read raise.
 def _filtered_contents(
     root: Path, paths: Sequence[str], max_bytes: int
 ) -> Iterator[Candidate]:

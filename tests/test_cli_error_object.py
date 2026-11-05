@@ -32,7 +32,6 @@ COMMAND = "/opt/first-commit/bin/first-commit"
 PRE_COMMIT = "/opt/tools/pre-commit"
 CHECK_HOOK = " run first-commit-check --hook-stage manual --all-files"
 NO_COMMAND = "No single command fixes this"
-# Each error a run can stop on, with its error code and exit code.
 ERROR_ROWS = (
     (SetupError("Setup input ended.\nfix: run setup in a terminal."), "setup-input", 2),
     (SetupCancelledError("Setup was cancelled."), "cancelled", 1),

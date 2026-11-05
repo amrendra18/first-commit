@@ -21,7 +21,6 @@ GITHUB_REPOSITORY = "amrendra18/first-commit"
 HTTPS_REPOSITORY = f"https://github.com/{GITHUB_REPOSITORY}"
 SSH_REPOSITORY = f"ssh://git@github.com/{GITHUB_REPOSITORY}"
 APPROVED_REPOSITORIES = (HTTPS_REPOSITORY, SSH_REPOSITORY)
-# pre-commit's own name for hooks declared in the project's hook file.
 LOCAL_REPOSITORY = "local"
 REVISION_CHARS = 40
 REVISION = re.compile(rf"[0-9a-f]{{{REVISION_CHARS}}}")
@@ -248,8 +247,6 @@ def runs_launcher(hook: Mapping[str, Any]) -> bool:
     return words[:1] == [LAUNCHER]
 
 
-# True when a first-commit hook or a push-check hook runs bin/first-commit outside its
-# own checkout; setup refuses the file, and doctor warns as for a changed hook.
 def foreign_launcher(root: Path, entries: list[HookEntry]) -> bool:
     return not own_checkout(root) and any(
         runs_launcher(hook)
@@ -348,8 +345,6 @@ def _undeclared_rules(entries: list[HookEntry], *, own: bool) -> list[str]:
     return rules
 
 
-# A repo: local hook whose entry starts with the bare name runs the first-commit that
-# PATH finds; bin/first-commit names a file in the repository instead.
 def runs_installed_command(entries: list[HookEntry]) -> bool:
     for repository, hook in entries:
         entry = hook.get("entry")

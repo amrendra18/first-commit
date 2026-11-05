@@ -56,7 +56,6 @@ PINNED_TODAY = (
     "      - id: first-commit-doctor\n"
     "      - id: first-commit-check\n"
 ).encode()
-# Files a clone of a project has once the first commit is pushed.
 TRACKED = (HOOK_CONFIG, ".repo-policy.json", ".gitignore", ".gitmessage")
 
 

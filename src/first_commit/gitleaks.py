@@ -195,7 +195,6 @@ def _reported_entries(
             [scanner.executable, *_with_report(arguments, report)],
             root,
             scanner.environment,
-            # A scan of input bytes is a `gitleaks stdin` scan; see scan_stdin.
             options
             if options.input_bytes is None
             else options._replace(folder=Path(folder)),
@@ -225,7 +224,6 @@ def _scan(
         root,
         _validated(root, scanner),
         (*spec.arguments, REPORT_PLACEHOLDER, *spec.trailing),
-        # A history scan keeps Gitleaks' log, to check that it read every commit.
         RunOptions(capture_output=spec.revisions is not None, timeout=spec.timeout),
         spec.revisions,
     )

@@ -39,7 +39,6 @@ class FindingCollector:
     def full(self) -> bool:
         return self._kept.full()
 
-    # not_shown carries the count of findings a nested collector left out.
     def add(self, findings: Iterable[Finding], *, not_shown: int = 0) -> None:
         for finding in findings:
             self._kept.add(finding)

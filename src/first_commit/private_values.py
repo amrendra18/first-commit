@@ -238,7 +238,6 @@ def _project_values(root: Path, relative_path: str, where: str = "") -> tuple[st
         return _parse_values(raw.decode("utf-8"), label)
 
 
-# A linked worktree applies the main worktree's project list as well as its own.
 def load_private_values(root: Path, relative_path: str) -> PrivateValues:
     worktrees = _worktrees(root)
     user, kept = _user_values(worktrees)

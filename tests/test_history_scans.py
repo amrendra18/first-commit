@@ -11,8 +11,6 @@ from tests.gitleaks_support import SLACK_LINE, commit_fixture, needs_real_scanne
 from tests.support import initialize_repository, run_git
 
 INCOMPLETE = "could not read the whole history"
-# A Gitleaks that passes the version and capability checks, then logs this text
-# and exits 0, as 8.30.0 does when Git fails under it.
 LOGGING_SCANNER = (
     "#!/bin/sh\n"
     "if [ \"$1\" = version ]; then echo '8.30.0'; exit 0; fi\n"
@@ -87,8 +85,6 @@ class HistoryScanTest(unittest.TestCase):
     def test_a_commit_made_during_the_scan_does_not_fail_it(self) -> None:
         self.commit("one.txt", "one\n")
         self.commit("two.txt", "two\n")
-        # The scanner commits a third file while it runs, then reports the two
-        # commits that existed when the scan started.
         committing = LOGGING_SCANNER.replace(
             "printf '%b'",
             'cd "$FIRST_COMMIT_TEST_REPOSITORY" && echo three > three.txt && '

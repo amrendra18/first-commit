@@ -26,8 +26,6 @@ NO_VERSION = (
 )
 
 
-# Setup's verification runs the program the hooks will run once. `version` reads
-# nothing and fetches nothing.
 def verify_installed_command(root: Path) -> None:
     raw = read_if_present(root / HOOK_CONFIG)
     if raw is None or not runs_installed_command(hook_entries(load_hook_config(raw))):

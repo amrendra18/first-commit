@@ -108,7 +108,6 @@ class PushedPrivacyTest(TemporaryRootTest):
     def test_the_oldest_commit_is_named_when_a_later_one_reuses_a_blob(self) -> None:
         self.add("b.txt", LINE + "\n")
         oldest = self.add("a.txt", f"x {LINE}\n")[:12]
-        # The same bytes as b.txt, a blob the batch reads before a.txt's first one.
         self.add("a.txt", LINE + "\n")
 
         found = [(item.path, item.commit) for item in self.findings()]
@@ -141,8 +140,6 @@ class PushedPrivacyTest(TemporaryRootTest):
         self.add("two.txt", "two\n")
         policy = replace(parse_policy(b'{"schema_version":1}', self.root), max_files=1)
 
-        # git push origin <older>:refs/heads/main, as the fix line says: the pushed
-        # branch alone fits the limit, so it is read, and its value is still reported.
         found = self.scan(policy, PushedScope(older, "origin"), 10)
 
         self.assertEqual(
@@ -165,7 +162,6 @@ class PushedPrivacyTest(TemporaryRootTest):
         )
         self.assertIn(f"git rebase -i {added}^", output)
         self.assertNotIn(CANARY, output)
-        # check reads no file contents of commits; only the push does.
         code, output = history_cli(self.root, ("check",), {})
         self.assertEqual(0, code, output)
 
@@ -195,7 +191,6 @@ class PushedPrivacyTest(TemporaryRootTest):
 
     @needs_real_scanner
     def test_clean_push_passes(self) -> None:
-        # A commit a remote-tracking branch holds is already public.
         public = self.add("public.txt", f"{LINE}\n")
         run_git(self.root, "update-ref", "refs/remotes/origin/main", public)
         self.add("notes.txt", "clean\n")
@@ -215,7 +210,6 @@ class PushedPrivacyTest(TemporaryRootTest):
 
         self.assertEqual(0, self.push()[0])
 
-        # An exception in the working copy alone approves nothing a push sends.
         (self.root / POLICY_PATH).write_text(
             _approving_policy("other.txt", 1), encoding="utf-8"
         )
@@ -285,8 +279,6 @@ class PushedPrivacyTest(TemporaryRootTest):
         )
 
     def test_an_invalid_policy_in_a_pushed_commit_approves_nothing(self) -> None:
-        # The policy is fixed in a later commit; the older commit stays pushable and
-        # gets no exceptions, so its value is still reported.
         (self.root / POLICY_PATH).write_text("[]\n", encoding="utf-8")
         added = self.add("notes.txt", LINE + "\n", POLICY_PATH)[:12]
         (self.root / POLICY_PATH).write_text('{"schema_version":1}\n', "utf-8")
@@ -347,7 +339,6 @@ class PushedPrivacyTest(TemporaryRootTest):
         run_git(self.root, "update-ref", "-d", "refs/remotes/origin/main")
         run_git(self.root, "switch", "-q", "--orphan", "first")
         added = self.add("notes.txt", LINE + "\n")[:12]
-        # Deleted in the next commit, so only the root commit's own change holds it.
         self.remove("notes.txt")
         policy = parse_policy(b'{"schema_version":1}', self.root)
 
@@ -455,5 +446,4 @@ class PushedPrivacyTest(TemporaryRootTest):
             found = list(_findings(scan))
 
         self.assertEqual(list(range(lines)), [item.line for item in found])
-        # Each later version repeats every key, so its findings are dropped at once.
         self.assertLess(max(held), 2 * lines)

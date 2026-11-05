@@ -150,7 +150,6 @@ class NewFolderSetupTest(SetupFixture):
             setup_repository(
                 folder, SetupRequest(revision=REVISION), contributor=self.person
             )
-        # The second route, as printed: git init in the folder, then setup.
         run_git(folder, "init", "-q")
         self.root = folder
         self.local_hooks()

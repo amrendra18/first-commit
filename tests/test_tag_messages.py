@@ -184,8 +184,6 @@ class TagMessageParsingTest(TemporaryRootTest):
                     "first_commit.history_messages.remote_patterns",
                     return_value=remotes,
                 ),
-                # One answer list in call order, for the module's own Git calls and
-                # the shared helpers' calls.
                 mock.patch("first_commit.history_messages.run_git", git),
                 mock.patch("first_commit.git.run_git", git),
                 self.assertRaisesRegex(GitError, error),

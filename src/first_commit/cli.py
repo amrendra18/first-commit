@@ -116,7 +116,6 @@ EXECUTABLE_VARIABLE = "FIRST_COMMIT_EXECUTABLE"
 # Inside these stages the program path is pre-commit's cache, which no one runs.
 HOOK_STAGES = frozenset({"pre-commit", "commit-msg", "pre-push"})
 FIX_LINE = re.compile(r"\n\s*fix: ")
-# Advice that names a quoted command to run, such as "run 'first-commit setup'".
 NAMED_COMMAND = re.compile(r"\brun ([`'])[^`']+\1")
 UNKNOWN_PROGRAM = (
     " The command that fixes this cannot be named: first-commit did not start from a "
@@ -280,7 +279,6 @@ def _help(output_format: str) -> None:
         parser.print_help()
 
 
-# These verbs read no state and start no process.
 STATELESS: dict[str, Callable[[str], None]] = {"version": _version, "help": _help}
 
 
@@ -407,7 +405,6 @@ def _check_hook(code: str) -> tuple[list[str], str]:
     )
 
 
-# The commands, or the reason no command can be named.
 def _commands(
     error: BaseException, words: Sequence[str], exported: str
 ) -> list[str] | str:
@@ -421,8 +418,6 @@ def _commands(
     return UNKNOWN_PROGRAM if program is None else [shlex.join((program, *arguments))]
 
 
-# message drops the fix line, and says why when next holds no command, unless the
-# message itself names the command to run.
 def _report_error(
     words: Sequence[str], code: str, text: str, commands: list[str] | str
 ) -> None:
@@ -454,7 +449,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
         _, code, exit_code = _row(error)
         _report_error(words, code, str(error), _commands(error, words, exported))
         return exit_code
-    # Ctrl-C, SIGTERM, or SIGHUP stops the run before its job is done.
     except KeyboardInterrupt as error:
         text = (
             STOPPED.format(signal.Signals(error.number).name)

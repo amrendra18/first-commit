@@ -8,7 +8,6 @@ from first_commit.git import run_git
 ATTRIBUTE_FIELDS = 3
 
 
-# The <driver> names of each <section>.<driver>.<setting> key the Git config sets.
 def configured_drivers(
     root: Path, section: str, settings: Collection[str]
 ) -> set[bytes]:

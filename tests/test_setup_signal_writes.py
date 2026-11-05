@@ -33,7 +33,6 @@ def _signal_after(
 ) -> Callable[..., object]:
     calls: list[int] = []
 
-    # The signal lands right after the write is done, before setup records it.
     def write(*arguments: object, **options: object) -> object:
         result = real(*arguments, **options)
         calls.append(1)
@@ -89,8 +88,6 @@ class SetupSignalWriteTest(SetupFixture):
     def test_a_signal_after_a_git_setting_is_written_leaves_none(self) -> None:
         self.assert_undone_after_each("run_git")
 
-    # Ctrl-C in a terminal also stops the Git child, which may have written the
-    # setting already; setup then fails on Git's exit code.
     def test_ctrl_c_that_stops_git_after_it_wrote_still_undoes_it(self) -> None:
         before = self.new_repository()
 

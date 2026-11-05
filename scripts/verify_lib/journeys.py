@@ -200,7 +200,6 @@ def _private_file_name(run: Run, project: Path) -> list[str]:
     ]
 
 
-# Committed past the hooks and deleted later, the value is still in what a push sends.
 def _pushed_value(run: Run, project: Path) -> list[str]:
     remote = run.work / "privacy-remote.git"
     run.command(["git", "init", "-q", "--bare", remote], run.work, expect=0)
@@ -262,7 +261,6 @@ def feature_privacy(run: Run) -> list[str]:
     ]
 
 
-# The canary is only in the user-level list, a link to a mode 644 file.
 def _user_list(run: Run, project: Path) -> list[str]:
     link = Path(run.environment["HOME"]) / USER_LIST
     target = run.work / "user-private-values.txt"
