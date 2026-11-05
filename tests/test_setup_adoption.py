@@ -48,19 +48,26 @@ class HookFileAdoptionTest(SetupFixture):
             result = validation.doctor(self.root, policy)
         return [item for item in result.findings if item.rule_id == PUSH_CHECK_RULE]
 
-    def test_this_repositorys_own_hook_file_is_accepted_by_setup(self) -> None:
+    def test_this_repositorys_own_hook_file_is_accepted_only_in_its_checkout(
+        self,
+    ) -> None:
         run_git(self.root, "init", "-q")
         raw = (PROJECT / ".pre-commit-config.yaml").read_bytes()
         (self.root / ".pre-commit-config.yaml").write_bytes(raw)
         check_hook_config(raw, None)
-        actions = setup_repository(
-            self.root, SetupRequest(dry_run=True), contributor=self.person
-        )
+        with self.assertRaisesRegex(SetupError, "declaration conflicts"):
+            setup_repository(
+                self.root, SetupRequest(dry_run=True), contributor=self.person
+            )
+        with patch("first_commit.hooks.own_checkout", return_value=True):
+            actions = setup_repository(
+                self.root, SetupRequest(dry_run=True), contributor=self.person
+            )
+            self.assertEqual([], self.doctor_findings())
         self.assertIn(
             "Hook source: existing project-owned configuration retained", actions
         )
         self.assertIn("Verification: preflight passed; no changes made", actions)
-        self.assertEqual([], self.doctor_findings())
         push_hook = raw[raw.index(b"      - id: first-commit-push\n") :]
         push_hook = push_hook[: push_hook.index(b"      - id: project-quality\n")]
         without_push = raw.replace(push_hook, b"")

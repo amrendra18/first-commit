@@ -20,14 +20,19 @@ A person runs the `sh` block under README "Remove" in the checkout.
    writes every setting the Remove loop names. The identity file goes to a scratch path.
 3. Commit a new file with the identity setup wrote. This shows the hook and the signature
    that the Remove proofs later find absent.
-4. Run the README's block as printed with `/bin/sh -c`. `pre-commit` on its `PATH` is the
+4. Delete `default_install_hook_types` and its list from the clone's
+   `.pre-commit-config.yaml`. A project that keeps its own hook file may lack that key;
+   setup then installs each hook type by name, and `pre-commit uninstall` with no `-t`
+   removes only the `pre-commit` script.
+5. Run the README's block as printed with `/bin/sh -c`. `pre-commit` on its `PATH` is the
    harness Python's `-m pre_commit`.
-5. Commit a new file with `-c user.name=Plain -c user.email=plain@example.com`.
+6. Commit a new file with `-c user.name=Plain -c user.email=plain@example.com`.
 
 ## Proof
 
 Clone setup exits 0. The commit after setup exits 0, prints the `first-commit staged
-hygiene` line ending in `Passed`, and carries an SSH signature. The Remove block exits 0.
+hygiene` line ending in `Passed`, and carries an SSH signature. The edited hook file no
+longer names `default_install_hook_types`. The Remove block exits 0.
 `git config --local --list` prints the same lines as before setup. No `pre-commit`,
 `commit-msg`, or `pre-push` hook script is left. `.local/first-commit` and
 `.local/bin/gitleaks` are gone. The empty lock file `.git/first-commit-setup.lock` is still

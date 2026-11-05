@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from first_commit.contributor import Contributor, load_contributor
+from first_commit.fixes import linked_main_worktree
 from first_commit.generated_files import HOOK_PROPOSAL
 from first_commit.git import (
     GitError,
@@ -33,6 +34,12 @@ from first_commit.machine_identity import (
 )
 from first_commit.models import SetupBlockedError, SetupError, SetupFailedError
 from first_commit.paths import create_exclusive
+from first_commit.policy import PRIVATE_VALUES_PATH
+from first_commit.private_values import (
+    PrivateValuesError,
+    load_private_values,
+    masked_path,
+)
 from first_commit.setup_apply import (
     SETUP_LOCK_NAME,
     Progress,
@@ -129,17 +136,19 @@ def _preflight_source(root: Path, source: str) -> None:
             f"Hook source preflight: Git could not access {source}; check network "
             "access and authentication, then retry setup."
         ) from error
-    if result.returncode:
-        suggestion = (
-            "retry with --transport ssh"
-            if source == HTTPS_REPOSITORY
-            else "check SSH authentication and host trust, or retry with "
-            "--transport https"
-        )
+    if not result.returncode:
+        return
+    # Most HTTPS failures are a missing network, so that comes before the SSH route.
+    if source == HTTPS_REPOSITORY:
         raise DependencyError(
-            f"Hook source preflight: Git exited {result.returncode} for {source}; "
-            f"{suggestion}."
+            f"Hook source preflight: Git exited {result.returncode} for {source}.\n"
+            "fix: check network access to github.com and any proxy settings, then "
+            "run setup again; with a GitHub SSH key, --transport ssh is another route."
         )
+    raise DependencyError(
+        f"Hook source preflight: Git exited {result.returncode} for {source}; check "
+        "SSH authentication and host trust, or retry with --transport https."
+    )
 
 
 def _git_snapshot(folder: Path) -> GitSnapshot | None:
@@ -171,15 +180,43 @@ def _repository_exists(root: Path) -> bool:
     try:
         found = git_path(root, raw).resolve()
     except GitError as error:
-        raise SetupError("Git returned an invalid repository root.") from error
+        raise GitError("Git returned an invalid repository root.") from error
     if found != root:
-        raise SetupError("Run setup from the repository root.")
+        raise _inside_another_repository(found)
     return True
 
 
+# The outer root is masked with its private values, as check masks a root. A list
+# that cannot be read cannot mask it, so then the message names Git's answer.
+def _inside_another_repository(found: Path) -> SetupError:
+    # The cd names no path, so it runs as printed even where the mask hides a value.
+    change = 'cd "$(git rev-parse --show-toplevel)"'
+    try:
+        values = load_private_values(found, PRIVATE_VALUES_PATH).masked
+    except PrivateValuesError:
+        outer = "the root `git rev-parse --show-toplevel` prints"
+    else:
+        outer = masked_path(str(found), values)
+    return SetupError(
+        "Setup runs only at a repository root, and this folder is inside the Git "
+        f"repository at {outer}; setup changed nothing.\n"
+        f"fix: to set up that repository, run `{change}` and run setup there; to "
+        "start a separate repository, run `git init` in this folder and run setup "
+        "again."
+    )
+
+
 def _require_standard_git(root: Path) -> None:
-    if (root / ".git").is_symlink() or not (root / ".git").is_dir():
-        raise SetupError("Setup currently requires a standard Git repository root.")
+    if not (root / ".git").is_symlink() and (root / ".git").is_dir():
+        return
+    main = linked_main_worktree(root)
+    if main is not None:
+        raise SetupError(
+            "This folder is a linked worktree, and first-commit does not support "
+            "linked worktrees; setup changed nothing.\n"
+            f"fix: commit from the main worktree at {main}."
+        )
+    raise SetupError("Setup currently requires a standard Git repository root.")
 
 
 def _apply_locked(

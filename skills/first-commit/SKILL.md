@@ -14,7 +14,7 @@ Exit codes: 0 done; 1 a finding or not done (read the error); 2 bad call (unknow
 1. Preview first with `first-commit setup --dry-run`. Review each conflict and each `@no-commit` proposal by hand; never overwrite a project file to clear one.
 2. Run setup only when the user allows Git initialization, local Git settings, dependency installation, and hooks.
 3. Setup writes each starter file once; the project owns it from then on.
-4. After setup, run `first-commit doctor` and `first-commit check`.
+4. After setup, run `first-commit doctor`. Run `first-commit check` once the `@no-commit` markers are reviewed and the files are staged.
 5. Never stage, commit, change remotes, or publish without the user's permission.
 6. `first-commit doctor` and `first-commit check` are read-only, except that check and the hooks remove group and other access from the user's private-values list when the user owns it.
 7. Keep the contributor identity in the ignored `.local/first-commit/contributor.json`.
@@ -71,8 +71,8 @@ Options:
 
 Preview or apply the one-time setup: files, Git settings, hooks, and Gitleaks.
 
-- Writes: the missing files in `<repository>/`, the --root folder, such as README.md, AGENTS.md, .gitignore, .pre-commit-config.yaml, and .repo-policy.json, or a `*.first-commit-proposal.md` beside a document you already have; `<repository>/.git/` (git init when it has none, local Git settings, and hooks); `<repository>/.local/first-commit/`; `<repository>/.local/bin/gitleaks` when no Gitleaks is found; and ~/.config/first-commit/identity.json (or the same file under $XDG_CONFIG_HOME) when it does not exist. pre-commit fills its cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private temporary folders, removed on exit. --dry-run writes nothing.
-- Before: an identity (a public Git author name and email, and an SSH public key) from `<repository>/.local/first-commit/contributor.json`, the identity file, or the FIRST_COMMIT_AUTHOR_NAME, FIRST_COMMIT_AUTHOR_EMAIL, and FIRST_COMMIT_SIGNING_KEY variables, or typed in a terminal. Git and pre-commit 3.2.0 or newer on PATH, and network access. Without a terminal, --yes applies the plan.
+- Writes: the missing files in `<repository>/`, the --root folder, such as README.md, AGENTS.md, .gitignore, .pre-commit-config.yaml, and .repo-policy.json, or a `*.first-commit-proposal.md` beside a document you already have; `<repository>/.git/` (git init when it has none, local Git settings, and hooks); `<repository>/.local/first-commit/`; `<repository>/.local/bin/gitleaks` when that file is missing, even when Gitleaks is on PATH; and ~/.config/first-commit/identity.json (or the same file under $XDG_CONFIG_HOME) when it does not exist. pre-commit fills its cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private temporary folders, removed on exit. --dry-run writes nothing.
+- Before: an identity (a public Git author name and email, and an SSH public key) from `<repository>/.local/first-commit/contributor.json`, the identity file, or the FIRST_COMMIT_AUTHOR_NAME, FIRST_COMMIT_AUTHOR_EMAIL, and FIRST_COMMIT_SIGNING_KEY variables, or typed in a terminal. Git on PATH, and pre-commit 3.2.0 or newer in the Python environment that runs first-commit, as the `first-commit[setup]` install gives. Network access to github.com and pypi.org, and to the hosts their downloads redirect to: a githubusercontent.com host for the Gitleaks release, and files.pythonhosted.org for Python packages. Without a terminal, --yes applies the plan.
 - Effects: writes repository, writes own state, network github.com, network pypi.org
 - Exit codes: 0 done; 1 a finding or not done (read the error); 2 bad call (unknown verb or flag, invalid or missing input); 5 held for a person's yes.
 
@@ -136,7 +136,7 @@ Options:
 
 ## first-commit hook pre-push
 
-Check readiness, the working tree, staged bytes, and the commits a push sends.
+Check readiness and the commits a push sends.
 
 - Writes: nothing in the repository. It removes group and other access from ~/.config/first-commit/private-values.txt (or the same file under $XDG_CONFIG_HOME) when you own that file. The scanner writes its report to a private temporary folder, removed on exit.
 - Before: pre-commit runs it from the pre-push hook and says what the push sends, inside a Git repository with a .repo-policy.json file, and Gitleaks 8.30.0 on PATH or at `<repository>/.local/bin/gitleaks`; setup prepares both.
@@ -153,8 +153,8 @@ Options:
 
 Set up a clone from its pinned hooks; pre-commit runs it at the manual stage.
 
-- Writes: the missing files in `<repository>/`, the --root folder, such as README.md, AGENTS.md, .gitignore, .pre-commit-config.yaml, and .repo-policy.json, or a `*.first-commit-proposal.md` beside a document you already have; `<repository>/.git/` (git init when it has none, local Git settings, and hooks); `<repository>/.local/first-commit/`; `<repository>/.local/bin/gitleaks` when no Gitleaks is found; and ~/.config/first-commit/identity.json (or the same file under $XDG_CONFIG_HOME) when it does not exist. pre-commit fills its cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private temporary folders, removed on exit.
-- Before: a clone whose .pre-commit-config.yaml pins the first-commit hooks; pre-commit runs it from the first-commit-setup hook at the manual stage. The identity comes from `<repository>/.local/first-commit/contributor.json`, the identity file, or the FIRST_COMMIT_AUTHOR_NAME, FIRST_COMMIT_AUTHOR_EMAIL, and FIRST_COMMIT_SIGNING_KEY variables; it never asks. Network access.
+- Writes: the missing files in `<repository>/`, the --root folder, such as README.md, AGENTS.md, .gitignore, .pre-commit-config.yaml, and .repo-policy.json, or a `*.first-commit-proposal.md` beside a document you already have; `<repository>/.git/` (git init when it has none, local Git settings, and hooks); `<repository>/.local/first-commit/`; `<repository>/.local/bin/gitleaks` when that file is missing, even when Gitleaks is on PATH; and ~/.config/first-commit/identity.json (or the same file under $XDG_CONFIG_HOME) when it does not exist. pre-commit fills its cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private temporary folders, removed on exit.
+- Before: a clone whose .pre-commit-config.yaml pins the first-commit hooks; pre-commit runs it from the first-commit-setup hook at the manual stage. The identity comes from `<repository>/.local/first-commit/contributor.json`, the identity file, or the FIRST_COMMIT_AUTHOR_NAME, FIRST_COMMIT_AUTHOR_EMAIL, and FIRST_COMMIT_SIGNING_KEY variables; it never asks. Network access to github.com and pypi.org, and to the hosts their downloads redirect to: a githubusercontent.com host for the Gitleaks release, and files.pythonhosted.org for Python packages.
 - Effects: writes repository, writes own state, network github.com, network pypi.org
 - Exit codes: 0 done; 1 a finding or not done (read the error); 2 bad call (unknown verb or flag, invalid or missing input).
 

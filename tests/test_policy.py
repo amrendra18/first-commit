@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from first_commit.policy import (
     parse_policy,
 )
 from first_commit.policy_fields import PolicyError
+from tests.cli_support import PROJECT
 from tests.support import TemporaryRootTest
 from tests.validation_support import evaluate_candidates
 
@@ -52,7 +54,7 @@ class PolicyTest(TemporaryRootTest):
                     parse_policy(json.dumps(value).encode(), self.root)
                 self.assertEqual(
                     "The project policy file .repo-policy.json has unknown fields.",
-                    str(context.exception),
+                    str(context.exception).split("\n")[0],
                 )
                 self.assertNotIn(canary, str(context.exception))
 
@@ -344,5 +346,40 @@ class PolicyTest(TemporaryRootTest):
             parse_policy(json.dumps(value).encode(), self.root)
         self.assertEqual(
             "forbidden_paths[0] has invalid fields; use exactly match, reason, value.",
+            str(context.exception).split("\n")[0],
+        )
+
+    def test_policy_errors_print_a_fix_line_without_unknown_names(self) -> None:
+        canary = "private_canary_field"
+        architecture = (PROJECT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+        section = architecture.split("## Project policy file", 1)[1].split("\n## ")[0]
+        rows = re.findall(r"^\| `([a-z_]+)` \|", section, re.MULTILINE)
+        fields = ", ".join(("schema_version", *rows))
+        fix = (
+            "\nfix: edit .repo-policy.json to match 'Project policy file' in the "
+            f"first-commit ARCHITECTURE.md; the accepted fields are {fields}."
+        )
+        name = "The project policy file .repo-policy.json"
+        for raw, problem in (
+            (json.dumps({"schema_version": 1, canary: 1}), "has unknown fields."),
+            (b"[]", "must be a JSON object."),
+            (
+                b'{"schema_version": 2}',
+                "has an unsupported schema_version; supported: 1.",
+            ),
+            (b'{"schema_version": 1', "is not valid UTF-8 JSON."),
+        ):
+            with self.subTest(problem=problem):
+                with self.assertRaises(PolicyError) as context:
+                    parse_policy(
+                        raw if isinstance(raw, bytes) else raw.encode(), self.root
+                    )
+                self.assertEqual(f"{name} {problem}{fix}", str(context.exception))
+                self.assertNotIn(canary, str(context.exception))
+        email = {"schema_version": 1, "public_emails": ["not-an-address"]}
+        with self.assertRaises(PolicyError) as context:
+            parse_policy(json.dumps(email).encode(), self.root)
+        self.assertEqual(
+            f"public_emails[0] must be a single email address.{fix}",
             str(context.exception),
         )

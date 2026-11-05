@@ -46,6 +46,7 @@ class TrustAction(Enum):
 class TrustPlan(NamedTuple):
     action: TrustAction
     content: bytes = b""
+    keeps_setting: bool = False
 
     @property
     def writes_file(self) -> bool:
@@ -53,7 +54,7 @@ class TrustPlan(NamedTuple):
 
     @property
     def sets_setting(self) -> bool:
-        return self.action is not TrustAction.KEEP_SETTING
+        return self.action is not TrustAction.KEEP_SETTING and not self.keeps_setting
 
 
 def _public_key_bytes(root: Path, reference: str) -> bytes:
@@ -186,7 +187,7 @@ def _check_existing_file(
         try:
             tracked = is_tracked(root, ALLOWED_SIGNERS_PATH)
         except GitError as error:
-            raise SetupError(
+            raise GitError(
                 f"Git state of {ALLOWED_SIGNERS_PATH} cannot be determined."
             ) from error
         if tracked:
@@ -209,27 +210,34 @@ def trust_plan(
 ) -> TrustPlan | None:
     if not trust_self:
         return None
-    if settings.get(TRUST_SETTING):
+    setting = settings.get(TRUST_SETTING)
+    # A setting that names another file is the person's own, so it is kept unread.
+    # One that names setup's file gets the same checks as the file alone, and the
+    # file is written again when it is missing, as after a change of key.
+    if setting and setting != ALLOWED_SIGNERS_PATH:
         return TrustPlan(TrustAction.KEEP_SETTING)
     existing = read_if_present(confined_path(root, ALLOWED_SIGNERS_PATH))
     if existing is not None:
         _check_existing_file(
             root, existing, contributor, repository_exists=repository_exists
         )
-        return TrustPlan(TrustAction.KEEP_FILE)
+        return TrustPlan(TrustAction.KEEP_SETTING if setting else TrustAction.KEEP_FILE)
+    kept = bool(setting)
     if contributor is None:
-        return TrustPlan(TrustAction.PREVIEW_WRITE)
-    return TrustPlan(TrustAction.WRITE, allowed_signers_line(root, contributor))
+        return TrustPlan(TrustAction.PREVIEW_WRITE, keeps_setting=kept)
+    return TrustPlan(
+        TrustAction.WRITE, allowed_signers_line(root, contributor), keeps_setting=kept
+    )
 
 
 def trust_line(plan: TrustPlan, *, dry_run: bool) -> str:
     parts = []
     if plan.writes_file:
         parts.append(("would write " if dry_run else "wrote ") + ALLOWED_SIGNERS_PATH)
-    if plan.action is TrustAction.KEEP_SETTING:
-        parts.append("retained existing " + TRUST_SETTING)
     if plan.action is TrustAction.KEEP_FILE:
         parts.append("retained existing " + ALLOWED_SIGNERS_PATH)
     if plan.sets_setting:
         parts.append(("would set " if dry_run else "set ") + TRUST_SETTING)
+    else:
+        parts.append("retained existing " + TRUST_SETTING)
     return "Local signature trust: " + "; ".join(parts)

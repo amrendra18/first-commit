@@ -12,8 +12,9 @@ usage() {
     'src/first_commit/__init__.py: the working tree is clean, HEAD is on a branch,' \
     'the tag is new or already names HEAD, and README.md installs that tag.' \
     'Then runs scripts/check full, scripts/check matrix, scripts/verify full, and' \
-    'scripts/verify control, and prints the tag, the commit it names, and the push' \
-    'commands. It never tags or pushes.' \
+    'scripts/verify control, and prints the tag, the commit it names, and the' \
+    'release steps in order: push the branch, wait for CI on that commit, then' \
+    'push the tag. It never tags or pushes.' \
     '' \
     'The matrix needs every CI Python, 3.11 to 3.14: a cpython-<version>.* build of' \
     'each in the folder FIRST_COMMIT_PYTHONS names, or, when it is unset, python3.11' \
@@ -90,15 +91,23 @@ gate scripts/check matrix
 gate scripts/verify full
 gate scripts/verify control
 
-printf '\nReady to release %s at commit %s. Run:\n\n' "$tag" "$commit"
+printf '\nReady to release %s at commit %s.\n' "$tag" "$commit"
 if [[ -z "$tagged" ]]; then
+  printf '\nCreate the signed tag; it stays on this machine until step 3:\n\n'
   printf "  git tag -s %s -m 'first-commit %s' %s\n" "$tag" "$version" "$commit"
 fi
-printf '  git push origin %s\n  git push origin %s\n' "$branch" "$tag"
+# CI runs on pushes to main, so the tag waits for a green run on this exact commit.
+printf '\nThen release in this order:\n\n1. Push the branch:\n\n  git push origin %s\n' \
+  "$branch"
 if [[ "$branch" != main ]]; then
-  printf '\nThe branch is %s: merge it into main too, so GitHub main holds the release.\n' \
+  printf '\nThe branch is %s: fast-forward main to this commit and push main too,\n' \
     "$branch"
+  printf 'because CI runs on pushes to main and GitHub main holds the release.\n'
 fi
+printf '\n2. Wait for the CI run on commit %s to finish green on Linux and macOS:\n\n' \
+  "$commit"
+printf '  https://github.com/%s/actions\n\n3. Push the tag:\n\n  git push origin %s\n' \
+  "$repository" "$tag"
 cat <<EOF
 
 Then prove the published release:

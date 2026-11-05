@@ -22,7 +22,10 @@ AGENT_RULES = (
         "dependency installation, and hooks."
     ),
     "Setup writes each starter file once; the project owns it from then on.",
-    "After setup, run `first-commit doctor` and `first-commit check`.",
+    (
+        "After setup, run `first-commit doctor`. Run `first-commit check` once the "
+        "`@no-commit` markers are reviewed and the files are staged."
+    ),
     "Never stage, commit, change remotes, or publish without the user's permission.",
     (
         "`first-commit doctor` and `first-commit check` are read-only, except that "
@@ -54,10 +57,17 @@ SETUP_WRITES = (
     "`*.first-commit-proposal.md` beside a document you already have; "
     "`<repository>/.git/` (git init when it has none, local Git settings, and "
     "hooks); `<repository>/.local/first-commit/`; `<repository>/.local/bin/gitleaks` "
-    "when no Gitleaks is found; and ~/.config/first-commit/identity.json (or the "
+    "when that file is missing, even when Gitleaks is on PATH; and "
+    "~/.config/first-commit/identity.json (or the "
     "same file under $XDG_CONFIG_HOME) when it does not exist. pre-commit fills its "
     "cache, ~/.cache/pre-commit/. A Gitleaks download and the scanner use private "
     "temporary folders, removed on exit."
+)
+# The Effects: words name the first host of each download; this names the rest.
+NETWORK = (
+    "Network access to github.com and pypi.org, and to the hosts their downloads "
+    "redirect to: a githubusercontent.com host for the Gitleaks release, and "
+    "files.pythonhosted.org for Python packages."
 )
 IDENTITY_SOURCES = (
     "`<repository>/.local/first-commit/contributor.json`, the identity file, or the "
@@ -96,9 +106,10 @@ HELP = {
     "setup": VerbHelp(
         f"{SETUP_WRITES} --dry-run writes nothing.",
         "an identity (a public Git author name and email, and an SSH public key) from "
-        f"{IDENTITY_SOURCES}, or typed in a terminal. Git and pre-commit 3.2.0 or "
-        "newer on PATH, and network access. Without a terminal, --yes applies the "
-        "plan.",
+        f"{IDENTITY_SOURCES}, or typed in a terminal. Git on PATH, and pre-commit "
+        "3.2.0 or newer in the Python environment that runs first-commit, as the "
+        f"`first-commit[setup]` install gives. {NETWORK} Without a terminal, --yes "
+        "applies the plan.",
         SETS_UP,
         tuple(ExitCode),
     ),
@@ -128,7 +139,7 @@ HELP = {
         SETUP_WRITES,
         "a clone whose .pre-commit-config.yaml pins the first-commit hooks; "
         "pre-commit runs it from the first-commit-setup hook at the manual stage. "
-        f"The identity comes from {IDENTITY_SOURCES}; it never asks. Network access.",
+        f"The identity comes from {IDENTITY_SOURCES}; it never asks. {NETWORK}",
         SETS_UP,
     ),
     "help": READ_ONLY,

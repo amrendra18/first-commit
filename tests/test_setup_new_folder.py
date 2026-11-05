@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 import unittest
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from first_commit.contributor import Contributor
 from first_commit.git import GitError
 from first_commit.models import SetupError
+from first_commit.policy import PRIVATE_VALUES_PATH
 from first_commit.setup import SetupRequest, setup_repository
 from first_commit.setup_apply import SETUP_LOCK_NAME
 from first_commit.setup_files_plan import SetupOptions
@@ -14,6 +16,11 @@ from first_commit.setup_plan import RepositoryState, SetupPlan, plan_setup
 from tests.setup_support import REVISION, SetupFixture
 from tests.support import run_git
 
+UNREAD_ROOT_FIX = (
+    "inside the Git repository at the root `git rev-parse --show-toplevel` prints; "
+    "setup changed nothing.\n"
+    'fix: to set up that repository, run `cd "$(git rev-parse --show-toplevel)"`'
+)
 HOLD_LOCK = (
     "import fcntl, os, sys\n"
     "descriptor = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
@@ -106,6 +113,51 @@ class NewFolderSetupTest(SetupFixture):
                 contributor=self.person,
             )
         self.assertFalse((self.root / ".git").exists())
+
+    def test_setup_inside_another_repository_names_its_root_and_two_routes(
+        self,
+    ) -> None:
+        canary = "synthetic-outer-canary"
+        outer = self.root.resolve() / canary
+        outer.mkdir()
+        run_git(outer, "init", "-q")
+        (outer / ".gitignore").write_text(".local/\n", encoding="utf-8")
+        values = outer / PRIVATE_VALUES_PATH
+        values.parent.mkdir(parents=True)
+        values.write_text(canary + "\n", encoding="utf-8")
+        values.chmod(0o600)
+        folder = outer / "my-project"
+        folder.mkdir()
+
+        with self.assertRaises(SetupError) as stopped:
+            setup_repository(
+                folder, SetupRequest(revision=REVISION), contributor=self.person
+            )
+
+        masked = str(outer).replace(canary, "<private value>")
+        self.assertEqual(
+            "Setup runs only at a repository root, and this folder is inside the "
+            f"Git repository at {masked}; setup changed nothing.\n"
+            "fix: to set up that repository, run "
+            '`cd "$(git rev-parse --show-toplevel)"` and run '
+            "setup there; to start a separate repository, run `git init` in this "
+            "folder and run setup again.",
+            str(stopped.exception),
+        )
+        self.assertEqual([], list(folder.iterdir()))
+        (outer / ".gitignore").unlink()
+        with self.assertRaisesRegex(SetupError, re.escape(UNREAD_ROOT_FIX)):
+            setup_repository(
+                folder, SetupRequest(revision=REVISION), contributor=self.person
+            )
+        # The second route, as printed: git init in the folder, then setup.
+        run_git(folder, "init", "-q")
+        self.root = folder
+        self.local_hooks()
+        actions = setup_repository(
+            folder, SetupRequest(revision=REVISION), contributor=self.person
+        )
+        self.assertIn("Verification: passed", actions)
 
 
 if __name__ == "__main__":

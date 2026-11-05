@@ -92,14 +92,15 @@ def exit_code_items(text: str) -> list[int] | None:
 
 class ToolContractTest(unittest.TestCase):
     scratch: ClassVar[Path]
-    state_folders: ClassVar[list[Path]]
 
     @classmethod
     def setUpClass(cls) -> None:
         temporary = tempfile.TemporaryDirectory()
         cls.addClassCleanup(temporary.cleanup)
         cls.scratch = Path(temporary.name).resolve()
-        cls.state_folders = []
+
+    def setUp(self) -> None:
+        self.state_folders: list[Path] = []
 
     def call(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         work = Path(tempfile.mkdtemp(dir=self.scratch))
@@ -237,8 +238,20 @@ class ToolContractTest(unittest.TestCase):
         self.assertIn("first-commit --version", commands)
         self.assertIn("XDG_CONFIG_HOME", readme)
 
+    # Runs the other probes itself, so a run of this probe alone checks every call.
     def test_9_8_state_folder_stays_empty(self) -> None:
-        self.assertTrue(self.state_folders, "run with probes 9.1 to 9.7")
+        for probe in (
+            self.test_9_1_version,
+            self.test_9_2_help,
+            self.test_9_3_unknown_verb,
+            self.test_9_4_unknown_flag,
+            self.test_9_5_no_coordinator_name,
+            self.test_9_6_skill_matches_generated_help,
+            self.test_9_7_readme_sections,
+            self.test_exit_codes_are_the_contract_table,
+        ):
+            probe()
+        self.assertTrue(self.state_folders, "the probes made no call")
         for state in self.state_folders:
             self.assertTrue(state.is_dir(), state)
             self.assertEqual([], list(state.iterdir()), state)

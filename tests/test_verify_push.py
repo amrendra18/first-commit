@@ -12,6 +12,11 @@ lines=$(cat)
 printf 'call %s %s\\n%s\\n' "$1" "$2" "$lines" >> "$0.log"
 case "$lines" in
   *refs/heads/second*) echo 'secrets.gitleaks "second-secret.txt"'; exit 1 ;;
+  "refs/heads/main "*" {"0" * 40}") ;;
+  "refs/heads/main "*)
+    commit=$(echo "$lines" | cut -d ' ' -f 2 | cut -c 1-12)
+    echo 'git.unsigned-commit ".git": Commit '"$commit"' has no signature.'
+    exit 1 ;;
 esac
 echo '{core.PUSH_HOOK}.....Passed'
 """
@@ -64,12 +69,13 @@ class VerifyPushTest(unittest.TestCase):
         head = _git(self.project, "rev-parse", "HEAD")
         remote = self.work / "remote.git"
         calls = self.hook.with_name("pre-push.log").read_text("utf-8").split("call ")
-        self.assertEqual(3, len(calls))
-        first, second = (call.splitlines() for call in calls[1:])
+        self.assertEqual(4, len(calls))
+        first, unsigned, second = (call.splitlines() for call in calls[1:])
         self.assertEqual(f"origin {remote}", first[0])
         self.assertEqual(
             [f"refs/heads/main {head} refs/heads/main {'0' * 40}"], first[1:]
         )
+        self.assertEqual(["refs/heads/main", head], unsigned[1].split()[2:])
         self.assertEqual(f"origin {remote}", second[0])
         self.assertEqual(
             ["refs/heads/first", "refs/heads/second"],
@@ -81,6 +87,9 @@ class VerifyPushTest(unittest.TestCase):
                 "git push of main to a local bare remote exited 0",
                 f"Git ran the pre-push hook, which printed '{core.PUSH_HOOK}' Passed",
                 "the bare remote holds main",
+                "git push of main with a commit made with --no-gpg-sign exited 1",
+                "git.unsigned-commit named the unsigned commit's short id",
+                "the bare remote's main stayed at the last signed commit",
                 (
                     "git push of two new branches: first (clean), then second (a "
                     "commit holding a token) exited 1"

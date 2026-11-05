@@ -39,6 +39,12 @@ class CommittedMessageTest(TemporaryRootTest):
     @needs_real_scanner
     def setUp(self) -> None:
         super().setUp()
+        # These pushes test the secret scans; test_pushed_signatures covers signing.
+        unsigned = mock.patch(
+            "first_commit.validation.unsigned_commit_findings", return_value=[]
+        )
+        unsigned.start()
+        self.addCleanup(unsigned.stop)
         pushed_base_commit(self.root)
         self.policy = parse_policy(b'{"schema_version":1}', self.root)
         self.changes = 0
@@ -248,9 +254,7 @@ class CommittedMessageParsingTest(TemporaryRootTest):
         ):
             with (
                 self.subTest(answers=answers),
-                mock.patch(
-                    "first_commit.history_messages.run_git", side_effect=answers
-                ),
+                mock.patch("first_commit.git.run_git", side_effect=answers),
                 self.assertRaisesRegex(GitError, error),
             ):
                 self.findings()
@@ -259,13 +263,10 @@ class CommittedMessageParsingTest(TemporaryRootTest):
         objects = [(COMMIT, b"tree x\nauthor y\n\nfeat: x\n\n" + HOME_LINE)]
         with (
             mock.patch(
-                "first_commit.history_messages.run_git",
-                side_effect=(
-                    COMMIT.encode() + b"\n",
-                    COMMIT.encode() + b" commit 9\n",
-                    b"",
-                ),
+                "first_commit.git.run_git",
+                side_effect=(COMMIT.encode() + b"\n", COMMIT.encode() + b" commit 9\n"),
             ),
+            mock.patch("first_commit.history_messages.run_git", return_value=b""),
             mock.patch(
                 "first_commit.history_messages.cat_file_objects", return_value=objects
             ),

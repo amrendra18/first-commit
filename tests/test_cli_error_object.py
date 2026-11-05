@@ -14,6 +14,9 @@ from first_commit.contributor import ContributorError
 from first_commit.git import GitError
 from first_commit.gitleaks_scanner import DependencyError
 from first_commit.models import (
+    FileAccessError,
+    LimitExceededError,
+    RepositoryContentError,
     SetupBlockedError,
     SetupCancelledError,
     SetupError,
@@ -41,8 +44,11 @@ ERROR_ROWS = (
     (ContributorError("The record is invalid.", "delete it."), "contributor-record", 2),
     (PrivateValuesError("The list is a link."), "private-values", 2),
     (DependencyError("Gitleaks is unavailable."), "dependency-missing", 1),
-    (GitError("Git timed out."), "git-access", 1),
-    (CandidateError("File count exceeds the limit."), "git-access", 1),
+    (GitError("Git returned an invalid commit."), "git-access", 1),
+    (CandidateError("Git returned invalid index metadata."), "git-access", 1),
+    (FileAccessError('"locked.txt": File cannot be read.'), "file-access", 1),
+    (RepositoryContentError(".gitleaks.toml is refused."), "repository-content", 1),
+    (LimitExceededError("File count exceeds the limit."), "limit-exceeded", 1),
     (PathError("The file changed."), "file-access", 1),
     (OSError("The disk failed."), "file-access", 1),
 )
@@ -87,6 +93,18 @@ class ErrorObjectTest(CliFixture):
         self.assertEqual(
             "Setup input ended. No single command fixes this; run setup in a terminal.",
             value["message"],
+        )
+
+    def test_a_message_that_names_its_command_never_denies_one(self) -> None:
+        text = (
+            "Gitleaks 8.30.0 is unavailable; run 'first-commit setup' in this "
+            "checkout, or install Gitleaks 8.30.0 on PATH."
+        )
+        with patch("first_commit.validation.doctor", side_effect=DependencyError(text)):
+            code, value = self.checked("check")
+        self.assertEqual(
+            (1, "dependency-missing", text, []),
+            (code, value["code"], value["message"], value["next"]),
         )
 
     def test_text_mode_keeps_the_error_and_fix_lines_on_stderr(self) -> None:

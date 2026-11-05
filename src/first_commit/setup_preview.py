@@ -1,7 +1,14 @@
 import os
 from pathlib import Path
 
+from first_commit.checks.identity import (
+    ALLOWED_SIGNERS_PATH,
+    SIGNERS_FILE_RULE,
+    TRUST_SETTING,
+    signing_file_findings,
+)
 from first_commit.checks.text import no_commit_findings
+from first_commit.git_settings import local_git_settings
 from first_commit.gitleaks_scanner import SCANNER_VERSION
 from first_commit.hooks import LOCAL_REPOSITORY
 from first_commit.models import Candidate, Origin
@@ -13,8 +20,12 @@ from first_commit.setup_command import (
     CHECK_HOOK_COMMAND,
     CHECK_HOOK_ID,
     HOOK_CONFIG,
+    SETUP_HOOK_COMMAND,
     SETUP_HOOK_ID,
+    TOOL_SETUP_COMMAND,
+    TRUST_SELF_VARIABLE,
     declares_hook,
+    declares_setup_hook,
 )
 from first_commit.setup_plan import RepositoryState, SetupPlan
 from first_commit.setup_trust import trust_line
@@ -28,9 +39,31 @@ def _step(label: str, *, needed: bool, dry_run: bool, verbs: tuple[str, str]) ->
     return f"{label}: {verbs[0] if dry_run else verbs[1]}"
 
 
+# Without --trust-self, setup keeps a setting whose file is gone, as after the README
+# recovery from a wrong key, so no signature verifies.
+def _missing_signers(plan: SetupPlan) -> str | None:
+    if plan.git.trust is not None or not plan.git.trust_configured:
+        return None
+    settings = local_git_settings(plan.root, (TRUST_SETTING,))
+    found = signing_file_findings(plan.root, settings)
+    if SIGNERS_FILE_RULE not in {item.rule_id for item in found}:
+        return None
+    if settings[TRUST_SETTING] != ALLOWED_SIGNERS_PATH:
+        return f"the file that {TRUST_SETTING} names is missing; restore it"
+    trust = (
+        f"{TRUST_SELF_VARIABLE}=1 {SETUP_HOOK_COMMAND}"
+        if declares_setup_hook(plan.root)
+        else f"{TOOL_SETUP_COMMAND} --trust-self"
+    )
+    return f"{ALLOWED_SIGNERS_PATH} is missing; run {trust} to write it"
+
+
 def _verification_trust(plan: SetupPlan, *, dry_run: bool) -> str:
     if not plan.git.trust_ready:
         return "Signature verification: not performed; trust is not checked"
+    missing = _missing_signers(plan)
+    if missing is not None:
+        return f"Signature verification: not performed; {missing}"
     state = (
         "would be configured"
         if dry_run and not plan.git.trust_configured

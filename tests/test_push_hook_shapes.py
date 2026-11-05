@@ -41,7 +41,6 @@ REFUSED: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 ACCEPTED: tuple[tuple[str, dict[str, Any]], ...] = (
     ("the plain hook", {}),
-    ("bin/ with --format", {"entry": "bin/first-commit hook pre-push --format json"}),
     ("--format in args", {"args": ["--format", "human"]}),
     ("the old stage name push", {"stages": ["push"]}),
 )
@@ -110,6 +109,13 @@ class PushHookShapeTest(TemporaryRootTest):
                 raw = _with_local_hook(_shaped(changes))
                 self.assertFalse(self.doctor_warns(raw))
                 check_hook_config(raw, REVISION)
+
+    def test_the_launcher_has_the_push_hook_shape_but_counts_only_here(self) -> None:
+        raw = _with_local_hook(
+            _shaped({"entry": "bin/first-commit hook pre-push --format json"})
+        )
+        check_hook_config(raw, REVISION)
+        self.assertTrue(self.doctor_warns(raw))
 
     def test_a_hook_without_stages_takes_stages_that_may_skip_the_push(self) -> None:
         default_stages = _with_local_hook(_shaped({"stages": None})).replace(
@@ -256,8 +262,7 @@ class PushHookShapeTest(TemporaryRootTest):
         )
 
     def test_the_shipped_hook_and_this_repositorys_hook_file_count(self) -> None:
-        for raw in (
-            hook_bytes(REVISION),
-            (ROOT / ".pre-commit-config.yaml").read_bytes(),
-        ):
-            self.assertFalse(self.doctor_warns(raw))
+        self.assertFalse(self.doctor_warns(hook_bytes(REVISION)))
+        self.assertNotIn(
+            "hooks.push-check", {item.rule_id for item in push_check_findings(ROOT)}
+        )

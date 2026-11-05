@@ -18,6 +18,8 @@ setup`.
 2. Run setup in the same folder.
 3. For each dry-run line that says "would", check that action's effect on disk or in
    `.git/config` (`scripts/verify_lib/effects.py`).
+4. Make an empty folder inside the set-up project and run the dry run there. Then run
+   `git init` in it, as the refusal's fix line says, and run the dry run again.
 
 ## Proof
 
@@ -38,3 +40,6 @@ effect check, and each effect exists:
 | Hook environments | pre-commit's `db.db` lists the HTTPS address at the snapshot commit, and its folder exists (the cache is shared with the setup feature) |
 
 A "would" line with no effect check fails the feature, so a new setup action needs a new check.
+
+The dry run inside the set-up project exits non-zero, names the outer repository, and gives the
+`git init` route; after `git init` in that folder, the dry run exits 0.

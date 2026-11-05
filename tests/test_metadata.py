@@ -192,12 +192,24 @@ class MetadataTest(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertTrue(os.access(self.root / script, os.X_OK))
 
+    def test_contributing_dates_each_measured_runtime(self) -> None:
+        text = " ".join((self.root / "CONTRIBUTING.md").read_text("utf-8").split())
+        sentences = [
+            sentence
+            for sentence in re.split(r"(?<=\.) ", text)
+            if re.search(r"\b\d+ (?:s|seconds|minutes)\b", sentence)
+        ]
+        self.assertTrue(sentences)
+        for sentence in sentences:
+            with self.subTest(sentence=sentence):
+                self.assertRegex(sentence, r"\b\d{4}-\d{2}-\d{2}\b")
+
     def test_readme_covers_upgrade_and_removal(self) -> None:
         readme = (self.root / "README.md").read_text("utf-8")
         section = readme.split("\n## Upgrade\n", 1)[1].split("\n## Learn more\n", 1)[0]
         for detail in (
-            "pre-commit autoupdate --freeze",
-            "pre-commit uninstall",
+            "git ls-remote",
+            "pre-commit uninstall -t pre-commit -t commit-msg -t pre-push",
             "git config --local --unset-all",
             "rm -rf .local/first-commit .local/bin/gitleaks",
         ):

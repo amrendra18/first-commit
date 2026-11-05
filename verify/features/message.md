@@ -36,8 +36,8 @@ A person commits with a message such as "did stuff", or pastes a token into a co
 
 ## Proof
 
-The first commit exits non-zero with `message.header` and a `fix:` line. The second exits
-non-zero with `secrets.gitleaks` at `<commit-message>`, and the token is never printed. The
+The first commit exits non-zero with `message.header`, `message.sections`, and a `fix:`
+line. The second exits non-zero with `secrets.gitleaks` at `<commit-message>`, and the token is never printed. The
 third exits 0. The fourth commit exits 0, because the commit-message hook only warns about a
 secret below the scissors line: its output says the text below the line is committed unless Git
 removes it. Its pre-push hook exits non-zero with `secrets.gitleaks` at `<commit-message>` and

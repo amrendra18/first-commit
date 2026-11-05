@@ -20,7 +20,7 @@
   verbose: true
 - id: first-commit-push
   name: first-commit pre-push hygiene
-  description: Checks readiness, the working tree, staged files, and the commits a push sends.
+  description: Checks readiness and the commits a push sends.
   entry: first-commit hook pre-push
   language: python
   minimum_pre_commit_version: "3.2.0"

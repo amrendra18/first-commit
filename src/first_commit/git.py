@@ -15,6 +15,7 @@ from first_commit.executables import (
     path_inside_repository,
     repository_program_message,
 )
+from first_commit.models import LimitExceededError
 
 
 class GitError(RuntimeError):
@@ -33,6 +34,15 @@ class GitUnavailableError(GitError):
     pass
 
 
+class GitTimeoutError(GitError, LimitExceededError):
+    def __init__(self, arguments: Sequence[str]) -> None:
+        super().__init__(
+            f"Git command `git {_subcommand(arguments)}` timed out after "
+            f"{GIT_TIMEOUT_SECONDS} seconds.\nfix: check that `git status` answers in "
+            "this repository, then rerun."
+        )
+
+
 GIT_TIMEOUT_SECONDS = 120
 # `git check-ignore` exits 1 when no pattern matches the path.
 CHECK_IGNORE_CODES = (0, 1)
@@ -47,6 +57,9 @@ BATCH_CHECK_ANSWER = re.compile(
     b"(" + OBJECT_ID.pattern.encode("ascii") + rb") ([a-z]+) ([0-9]+)"
 )
 BATCH_CHECK_MISSING = b" missing"
+INCONSISTENT_ANSWER = "Git returned an inconsistent object."
+# The characters of an object id that messages and findings show.
+SHORT_COMMIT = 12
 INDEX_FILE = "GIT_INDEX_FILE"
 UNTRUSTED_GIT_ENVIRONMENT = {
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -56,7 +69,12 @@ UNTRUSTED_GIT_ENVIRONMENT = {
     "GIT_CURL_VERBOSE",
     "GIT_DIR",
     "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    # These change what a pathspec matches, so a listing could miss a file.
+    "GIT_GLOB_PATHSPECS",
+    "GIT_ICASE_PATHSPECS",
     INDEX_FILE,
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_NOGLOB_PATHSPECS",
     "GIT_OBJECT_DIRECTORY",
     "GIT_NAMESPACE",
     "GIT_PREFIX",
@@ -64,13 +82,31 @@ UNTRUSTED_GIT_ENVIRONMENT = {
     "GIT_REPLACE_REF_BASE",
     "GIT_WORK_TREE",
 }
-
-
 # The variables that carry `git -c` settings; see commit_ident.
 COMMAND_LINE_CONFIG = ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
 # The variables that choose the global and system files Git reads the identity from.
 CONFIG_FILE_CHOICES = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")
 COMMAND_LINE_CONFIG_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+# Settings that change what `git log -p` and `git diff` print, so what Gitleaks
+# reads; color, a missing root commit, another header format, or a low binary-file
+# size hides keys, and a signature check's error stops the scan. Settings in
+# GIT_CONFIG_COUNT beat every configuration file; the caller's are removed first.
+# A repository's `.gitattributes` still chooses binary files and textconv drivers.
+PINNED_SETTINGS = (
+    ("color.ui", "never"),
+    ("color.diff", "never"),
+    ("log.showRoot", "true"),
+    ("log.showSignature", "false"),
+    ("log.abbrevCommit", "false"),
+    ("log.date", "default"),
+    ("format.pretty", "medium"),
+    ("core.bigFileThreshold", "512m"),
+    ("core.attributesFile", os.devnull),
+    ("diff.noprefix", "false"),
+    ("diff.mnemonicPrefix", "false"),
+    ("diff.srcPrefix", "a/"),
+    ("diff.dstPrefix", "b/"),
+)
 GIT_FOLDER_CACHE_SIZE = 16
 REFUSED_INDEX_FILE = (
     f"{INDEX_FILE} names an index outside this repository's Git folder. "
@@ -86,10 +122,9 @@ GIT_MISSING = (
 GIT_STATUS_FIX = (
     "fix: run `git status` in this repository to see Git's own error, then rerun."
 )
-# run_git checks GIT_INDEX_FILE against the Git folders, so without this cache each
-# Git call made while it is set, as in a commit hook, would start one more rev-parse.
-# A command checks one repository; the size of 16 only bounds the memory of a process
-# that checks many, such as the test suite.
+# run_git checks GIT_INDEX_FILE against the Git folders; this cache saves a rev-parse
+# per Git call while it is set, as in a commit hook. The size of 16 only bounds the
+# memory of a process that checks many repositories, such as the test suite.
 _GIT_FOLDERS: dict[Path, tuple[Path, Path]] = {}
 
 
@@ -160,6 +195,10 @@ def sanitized_git_environment(
             selected.pop(key, None)
     if index_file is not None:
         selected[INDEX_FILE] = index_file
+    selected["GIT_CONFIG_COUNT"] = str(len(PINNED_SETTINGS))
+    for number, (key, value) in enumerate(PINNED_SETTINGS):
+        selected[f"GIT_CONFIG_KEY_{number}"] = key
+        selected[f"GIT_CONFIG_VALUE_{number}"] = value
     # Every child gets this PATH. An empty PATH names the current folder, so a PATH
     # without an absolute entry becomes one that finds no program.
     if "PATH" in selected:
@@ -184,11 +223,15 @@ def run_git_own_index(root: Path, arguments: Sequence[str]) -> bytes:
     return _execute(root, arguments, None, sanitized_git_environment())
 
 
-# Keeps the GIT_CONFIG_* variables, so `git var` reads the identity `git commit`
-# records: Git passes `git -c` settings to a hook in them, and they can name other
-# global and system configuration files.
+# Keeps the caller's GIT_CONFIG_* variables in place of the pinned settings, so
+# `git var` reads the identity `git commit` records: Git passes `git -c` settings
+# to a hook in them, and they can name other global and system configuration files.
 def commit_ident(root: Path, variable: str) -> bytes:
-    environment = sanitized_git_environment(root=root)
+    environment = {
+        key: value
+        for key, value in sanitized_git_environment(root=root).items()
+        if not key.startswith("GIT_CONFIG_")
+    }
     environment.update(
         (key, value)
         for key, value in os.environ.items()
@@ -222,13 +265,6 @@ def _failed(arguments: Sequence[str], code: int) -> GitError:
     )
 
 
-def _timed_out(arguments: Sequence[str]) -> GitError:
-    return GitError(
-        f"Git command `git {_subcommand(arguments)}` timed out after "
-        f"{GIT_TIMEOUT_SECONDS} seconds.\n" + GIT_STATUS_FIX
-    )
-
-
 def _execute(
     root: Path,
     arguments: Sequence[str],
@@ -240,13 +276,14 @@ def _execute(
         result = subprocess.run(
             [git_executable(environment, root), "-C", str(root), *arguments],
             input=input_bytes,
+            stdin=subprocess.DEVNULL if input_bytes is None else None,
             env=environment,
             capture_output=True,
             check=False,
             timeout=GIT_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:
-        raise _timed_out(arguments) from error
+        raise GitTimeoutError(arguments) from error
     except OSError as error:
         raise GitError("Git is unavailable.") from error
     if result.returncode not in success_codes:
@@ -297,7 +334,7 @@ def _kill_on_timeout(process: subprocess.Popen[bytes]) -> Iterator[None]:
         yield
     except (GitError, OSError) as error:
         if expired.is_set():
-            raise _timed_out(BATCH_ARGUMENTS) from error
+            raise GitTimeoutError(BATCH_ARGUMENTS) from error
         if isinstance(error, GitError):
             raise
         raise GitError(BATCH_STOPPED) from error
@@ -374,7 +411,7 @@ class ObjectInfo(NamedTuple):
 def parse_batch_check(raw: bytes, count: int) -> list[ObjectInfo | None]:
     answers = raw.removesuffix(b"\n").split(b"\n") if count else []
     if len(answers) != count:
-        raise GitError("Git returned an inconsistent object.")
+        raise GitError(INCONSISTENT_ANSWER)
     parsed: list[ObjectInfo | None] = []
     for answer in answers:
         match = BATCH_CHECK_ANSWER.fullmatch(answer)
@@ -384,8 +421,26 @@ def parse_batch_check(raw: bytes, count: int) -> list[ObjectInfo | None]:
         elif answer.endswith(BATCH_CHECK_MISSING):
             parsed.append(None)
         else:
-            raise GitError("Git returned an inconsistent object.")
+            raise GitError(INCONSISTENT_ANSWER)
     return parsed
+
+
+# The one `git cat-file --batch-check` call: an answer per name, None when missing.
+def batch_check(root: Path, names: Sequence[str]) -> list[ObjectInfo | None]:
+    if not names:
+        return []
+    lines = "".join(name + "\n" for name in names).encode("utf-8")
+    raw = run_git(root, ("cat-file", "--batch-check"), lines)
+    return parse_batch_check(raw, len(names))
+
+
+# A caller ends its revisions with "--"; a path after it is read literally.
+def listed_commits(root: Path, arguments: Sequence[str]) -> list[str]:
+    raw = run_git(root, ("--literal-pathspecs", "rev-list", *arguments))
+    commits = raw.decode("ascii").split()
+    if any(OBJECT_ID.fullmatch(commit) is None for commit in commits):
+        raise GitError("Git returned an invalid commit.")
+    return commits
 
 
 def is_tracked(root: Path, relative_path: str) -> bool:

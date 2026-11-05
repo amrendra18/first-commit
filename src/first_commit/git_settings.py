@@ -18,14 +18,23 @@ def local_git_settings(root: Path, keys: Sequence[str]) -> Mapping[str, str]:
     return values
 
 
+# Git lists the section and the setting name in lower case and keeps a subsection's
+# case, so a key matches as `git config --get` matches it.
+def _listed_name(key: bytes) -> bytes:
+    section, dot, rest = key.partition(b".")
+    subsection, inner, name = rest.rpartition(b".")
+    return section.lower() + dot + subsection + inner + name.lower()
+
+
 def effective_git_settings(root: Path, keys: Sequence[str]) -> Mapping[str, str]:
     values = {}
-    selected = {key.encode("ascii") for key in keys}
+    selected = {_listed_name(key.encode("ascii")): key for key in keys}
     for entry in run_git(root, ("config", "--null", "--list")).split(b"\0"):
-        key, _, value = entry.partition(b"\n")
-        if key in selected:
+        listed, _, value = entry.partition(b"\n")
+        key = selected.get(listed)
+        if key is not None:
             try:
-                values[key.decode("ascii")] = value.decode("utf-8")
+                values[key] = value.decode("utf-8")
             except UnicodeDecodeError as error:
                 raise GitError("Git returned invalid configuration text.") from error
     return values

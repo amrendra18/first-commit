@@ -9,9 +9,9 @@ from pathlib import Path
 from unittest import mock
 
 from first_commit import cli, git
-from first_commit.executables import find_executable
+from first_commit.executables import find_executable, path_inside_repository
 from first_commit.gitleaks_scanner import DependencyError
-from first_commit.hooks import HTTPS_REPOSITORY
+from first_commit.hooks import HTTPS_REPOSITORY, installed_command_problem
 from first_commit.pre_commit_runner import run_pre_commit
 from first_commit.scanner_install import _curl_download, _download
 from first_commit.setup import _preflight_source
@@ -212,6 +212,59 @@ class AbsolutePathLookupTest(unittest.TestCase):
             ),
             (code, error.getvalue()),
         )
+        self.assertFalse(self.marker.exists())
+
+    def test_a_path_folder_inside_the_repository_is_refused_through_a_link(
+        self,
+    ) -> None:
+        system_git = Path(str(find_executable("git"))).resolve()
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        tools = Path(outside.name).resolve()
+        (tools / "git").symlink_to(system_git)
+        (tools / "first-commit").write_text("#!/bin/sh\nexit 0\n", "utf-8")
+        (tools / "first-commit").chmod(0o755)
+        (self.root / "bin").mkdir()
+        (self.root / "bin/git").symlink_to(system_git)
+        (self.root / "bin/first-commit").symlink_to(tools / "first-commit")
+        (self.root / "tools").symlink_to(tools)
+        for case, entry, folder in (
+            ("F1, a linked program", self.root / "bin", "bin"),
+            ("F2, a linked folder", self.root / "tools", "tools"),
+        ):
+            with self.subTest(case):
+                program = str(entry / "git")
+                inside = f"{folder}/git"
+                self.assertEqual(inside, path_inside_repository(program, self.root))
+                refusal = re.escape(f"Git on PATH is {inside} inside this repository")
+                with mock.patch.dict(os.environ, {"PATH": str(entry)}):
+                    with self.assertRaisesRegex(git.GitError, refusal):
+                        git.run_git(self.root, ("rev-parse", "--show-toplevel"))
+                    self.assertIn(
+                        f"{folder}/first-commit inside this repository",
+                        str(installed_command_problem(self.root)),
+                    )
+        self.assertIsNone(path_inside_repository(str(tools / "git"), self.root))
+
+    def test_a_path_folder_outside_that_links_into_the_repository_is_refused(
+        self,
+    ) -> None:
+        self.plant("git", "tools")
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        entry = Path(outside.name).resolve() / "linked"
+        entry.symlink_to(self.root / "tools")
+
+        self.assertEqual(
+            "tools/git", path_inside_repository(str(entry / "git"), self.root)
+        )
+        refusal = re.escape("Git on PATH is tools/git inside this repository")
+        with (
+            mock.patch.dict(os.environ, {"PATH": str(entry)}),
+            self.assertRaisesRegex(git.GitError, refusal),
+        ):
+            git.run_git(self.root, ("rev-parse", "--show-toplevel"))
+
         self.assertFalse(self.marker.exists())
 
 

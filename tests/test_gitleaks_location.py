@@ -72,6 +72,7 @@ class GitleaksLocationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             commit_fixture(root, "service/client.py")
+            head = run_git(root, "rev-parse", "HEAD").stdout.decode()[:12]
 
             findings = scan_history(root, max_findings=10)
 
@@ -80,7 +81,8 @@ class GitleaksLocationTest(unittest.TestCase):
             [(item.rule_id, item.path, item.line) for item in findings],
         )
         self.assertEqual(
-            "Gitleaks reported a repository-history finding.", findings[0].summary
+            f"Gitleaks reported a repository-history finding in commit {head}.",
+            findings[0].summary,
         )
 
     @needs_real_scanner
@@ -323,9 +325,9 @@ class GitleaksLocationTest(unittest.TestCase):
         )
 
     def test_report_fields_are_limited_to_the_location_allowlist(self) -> None:
-        self.assertEqual(("RuleID", "File", "StartLine"), REPORT_FIELDS)
+        self.assertEqual(("RuleID", "File", "StartLine", "Commit"), REPORT_FIELDS)
         self.assertEqual(
-            ("rule", "a.txt", 1),
+            ("rule", "a.txt", 1, None),
             report_fields(
                 {"RuleID": "rule", "File": "a.txt", "StartLine": 1, "Secret": "x"}
             ),
@@ -379,6 +381,8 @@ class GitleaksLocationTest(unittest.TestCase):
             root = Path(directory)
             with (
                 recorded_report_folders() as timed_out,
+                # The commit count runs Git first; this test fakes only Gitleaks.
+                mock.patch("first_commit.gitleaks._listed_commits", return_value=0),
                 mock.patch(
                     "first_commit.gitleaks_scanner.subprocess.run",
                     side_effect=(
@@ -393,6 +397,7 @@ class GitleaksLocationTest(unittest.TestCase):
 
             with (
                 recorded_report_folders() as failed,
+                mock.patch("first_commit.gitleaks._listed_commits", return_value=0),
                 mock.patch(
                     "first_commit.gitleaks_scanner.subprocess.run",
                     side_effect=(

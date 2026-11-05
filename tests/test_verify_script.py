@@ -332,7 +332,12 @@ class VerifyScriptTest(unittest.TestCase):
 
     def test_remove_runs_the_readme_remove_block_as_printed(self) -> None:
         block = harness("remove_journey").readme_remove_block()
-        self.assertTrue(block.startswith("pre-commit uninstall\n"), block)
+        self.assertTrue(
+            block.startswith(
+                "pre-commit uninstall -t pre-commit -t commit-msg -t pre-push\n"
+            ),
+            block,
+        )
         self.assertIn('  git config --local --unset-all "$key"\n', block)
         self.assertTrue(
             block.endswith("rm -rf .local/first-commit .local/bin/gitleaks\n"), block

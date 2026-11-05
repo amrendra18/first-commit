@@ -50,13 +50,13 @@ class FixedLimitsTest(unittest.TestCase):
             {
                 "Bytes per file": "10 MiB",
                 "Paths per scope": "10,000",
+                "File versions a pre-push scan reads": "10,000",
                 "Findings per scope": "1,000",
                 "Commit message": "1 MiB",
                 "Policy file": "1 MiB",
                 "One Git command, or one blob from `git cat-file --batch`": "120 seconds",
-                "One Gitleaks scan": "120 seconds; 600 for a full history scan",
-                "Remote list a scan leaves out (branch tips for a push, remote "
-                "names for `check --new-only`)": "64 KiB",
+                "One Gitleaks scan": "120 seconds; 600 for a history or pre-push scan",
+                "Remote names `check --new-only` leaves out": "64 KiB",
             },
             limits_table(),
         )

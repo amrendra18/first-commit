@@ -169,6 +169,7 @@ def pushed_base_commit(root: Path) -> str:
     (root / "base.txt").write_text("base\n", encoding="utf-8")
     commit_fixture(root, "base.txt")
     head = run_git(root, "rev-parse", "HEAD").stdout.decode().strip()
+    run_git(root, "remote", "add", "origin", "https://example.invalid/origin.git")
     run_git(root, "update-ref", "refs/remotes/origin/main", head)
     return head
 

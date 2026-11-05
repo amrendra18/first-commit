@@ -1,3 +1,5 @@
+import bisect
+import functools
 import hashlib
 import re
 import unicodedata
@@ -43,6 +45,9 @@ PATTERNS: tuple[tuple[str, str, str], ...] = (
         "Detected a literal user-home path.",
     ),
 )
+# With the PATTERNS rules, the rules privacy_detector_exceptions may name; a test
+# keeps policy_fields.PRIVACY_DETECTOR_RULES equal to them.
+UNAPPROVED_EMAIL_RULE = "privacy.unapproved-email"
 EXAMPLE_DOMAINS = {"example.com", "example.net", "example.org"}
 RESERVED_TEST_SUFFIXES = (".invalid", ".test")
 # Protocol namespaces, not mail domains. SSH names its algorithms, ciphers, and
@@ -63,6 +68,8 @@ FILE_DIGEST_RULES = frozenset({"privacy.private-key"})
 # Each call yields the line bytes again, one at a time: a list of a 10 MiB file's
 # lines took up to 300 MiB.
 RawLines = Callable[[], Iterator[bytes]]
+
+NEWLINE = re.compile("\n")
 
 
 @dataclass(frozen=True)
@@ -116,8 +123,15 @@ def forbidden_path_policy(
     return None
 
 
+# One file can hold many matches, so its newline offsets are found once and each
+# line number is a binary search; a str caches its hash, so the lookup is cheap.
+@functools.lru_cache(maxsize=4)
+def _newlines(text: str) -> tuple[int, ...]:
+    return tuple(match.start() for match in NEWLINE.finditer(text))
+
+
 def _line(text: str, start: int) -> int:
-    return text.count("\n", 0, start) + 1
+    return bisect.bisect_left(_newlines(text), start) + 1
 
 
 def _reserved_example_address(address: str) -> bool:
@@ -207,7 +221,7 @@ def _email_findings(
         if line in exempt_lines:
             continue
         yield Finding(
-            rule_id="privacy.unapproved-email",
+            rule_id=UNAPPROVED_EMAIL_RULE,
             path=path,
             line=line,
             summary="Detected an unapproved email address.",

@@ -20,6 +20,13 @@ Breaking:
    keeps its `error:` and `fix:` lines on stderr. See
    [Output](ARCHITECTURE.md#output).
 3. `--version` followed by anything but `--format` exits 2.
+4. The pre-push hook runs `doctor` and the pushed history only. The working
+   tree and the index are checked at commit time and by `check`, so a local
+   draft no longer blocks a push, and the push no longer runs the other policy
+   rules on a commit made with `--no-verify`
+   ([Known gaps](ARCHITECTURE.md#threats-and-known-gaps) item 12).
+5. A history or push scan that cannot read the whole history, as in a
+   blobless clone, exits 1 with `dependency-missing` (it passed before).
 
 Added:
 
@@ -43,6 +50,19 @@ Added:
    still mask output there. See [Private values](ARCHITECTURE.md#private-values).
 7. A missing `.repo-policy.json` has its own error code, `policy-missing`.
 8. An unknown flag lists every flag the verb accepts.
+9. The pre-push hook stops a pushed commit with no signature, such as one
+   made with `git commit --no-gpg-sign`, as `git.unsigned-commit`. It checks
+   only that a signature is there, and its fix line re-signs the unpushed
+   commits.
+10. The pre-push hook runs the privacy rules on each file version the pushed
+    commits add or change, so a private value committed with `--no-verify`
+    and deleted in a later commit still blocks the push. A finding names the
+    path, the line, and the commit, never the value, and its fix line says
+    how to remove it from that commit.
+11. The commit hook also checks the working copy of each staged Git LFS file,
+    whose index copy holds only a pointer. A missing working copy, or one that
+    is not a regular file, is a `files.filtered-unreadable` finding; one over
+    10 MiB warns. Other clean filters, such as git-crypt, keep the index copy.
 
 Changed:
 
@@ -50,7 +70,24 @@ Changed:
    `first-commit` from PATH; the `FIRST_COMMIT` shell variable is gone. It
    names what install writes, its network use, and the state folder
    `~/.config/first-commit` with its `XDG_CONFIG_HOME` override.
-2. first-commit meets tool contract 1.1.
+2. The README no longer says the hooks stop an unsigned commit, or that the
+   push checks pushed file contents for private values.
+   [Known gaps](ARCHITECTURE.md#threats-and-known-gaps) names both. The
+   README covers clones and upgrades with `--hooks installed`.
+3. `scripts/release` prints the release steps in order: push the branch, wait
+   for a green CI run on that commit on Linux and macOS, then push the tag.
+4. Every Git process first-commit or Gitleaks starts gets fixed display
+   settings, and the pathspec variables are removed, so a user setting such
+   as `color.ui = always` no longer hides a secret from the scan.
+5. A history or push secret finding names its commit, and its fix line says
+   how to remove it from that commit.
+6. A `bin/first-commit` hook entry counts as first-commit's hook only in
+   first-commit's own checkout. A PATH folder inside the repository is refused
+   even when it links outside.
+7. Ignored env-shaped files no longer count toward the 10,000-path limit.
+   Policy errors end with a fix line that lists the accepted fields. A bad
+   message header also reports missing sections. In a linked worktree, the
+   setup-naming fix lines point to the main worktree.
 
 ## 0.5.0
 

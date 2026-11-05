@@ -157,12 +157,12 @@ class CloneRevisionTest(unittest.TestCase):
         with self.assertRaises(SetupError) as error:
             configured_source(self.root)
         self.assertIn("rev to v0.3.0", str(error.exception))
-        self.assertIn("pre-commit autoupdate --freeze", str(error.exception))
+        self.assertIn("`git ls-remote` line of Install", str(error.exception))
         self.write(hook_config(revision="private-canary"))
         with self.assertRaises(SetupError) as error:
             configured_source(self.root)
         self.assertNotIn("private-canary", str(error.exception))
-        self.assertIn("pre-commit autoupdate --freeze", str(error.exception))
+        self.assertIn("`git ls-remote` line of Install", str(error.exception))
 
     def test_a_frozen_revision_with_its_tag_comment_is_accepted(self) -> None:
         self.write(

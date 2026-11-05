@@ -33,7 +33,7 @@ class RemoteMessageTest(TemporaryRootTest):
     def setUp(self) -> None:
         super().setUp()
         self.base = pushed_base_commit(self.root)
-        run_git(self.root, "update-ref", "-d", "refs/remotes/origin/main")
+        run_git(self.root, "remote", "remove", "origin")
         self.policy = parse_policy(b'{"schema_version":1}', self.root)
         path = self.root / ".git/test-message"
         path.write_text(commit_message("feat: add change") + HOME_LINE, "utf-8")

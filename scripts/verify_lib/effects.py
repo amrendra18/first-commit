@@ -11,6 +11,7 @@ from verify_lib.core import (
     IDENTITY,
     FeatureFailedError,
     Run,
+    blocked,
     exited,
     require,
 )
@@ -152,9 +153,27 @@ def feature_preview_matches_apply(run: Run) -> list[str]:
     previewed, preview = preview_setup(run, folder)
     untouched = not any(folder.iterdir())
     applied, _ = setup_journey(run, folder, preflight=False, transport="https")
-    return [
+    proofs = [
         exited(previewed, 0, "the dry run in an empty folder"),
         require(condition=untouched, observed="the dry run left the folder empty"),
         exited(applied, 0, "setup in the same folder"),
         *prove_effects(run, folder, preview),
+    ]
+    # An empty folder inside that repository: setup names the outer root and the
+    # git init route, and the route works as printed.
+    nested = folder / "nested"
+    nested.mkdir()
+    inside, refusal = preview_setup(run, nested)
+    run.command(["git", "init", "-q"], nested, expect=0)
+    separate, _ = preview_setup(run, nested)
+    return [
+        *proofs,
+        # The driver calls setup in process, so the refusal ends it with a traceback.
+        blocked(inside, "the dry run in an empty folder inside that repository"),
+        require(
+            condition="inside the Git repository at" in refusal
+            and "run `git init` in this folder" in refusal,
+            observed="the refusal names the outer repository and the git init route",
+        ),
+        exited(separate, 0, "the dry run after git init, as the fix line says"),
     ]

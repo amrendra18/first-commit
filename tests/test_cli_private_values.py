@@ -71,7 +71,6 @@ class PrivateValuesCliTest(PrivateValuesFixture):
         for arguments, scopes in (
             (("check",), {"working", "staged"}),
             (("hook", "pre-commit"), {"staged"}),
-            (("hook", "pre-push"), {"working", "staged"}),
         ):
             with self.subTest(command=" ".join(arguments)):
                 code, output, error = self.run_without_scanner(*arguments)
@@ -89,6 +88,18 @@ class PrivateValuesCliTest(PrivateValuesFixture):
                     if any(item["rule_id"] == RULE for item in check["findings"])
                 }
                 self.assertEqual(scopes, found)
+
+    def test_pre_push_leaves_out_a_private_value_the_push_does_not_send(
+        self,
+    ) -> None:
+        code, output, error = self.run_without_scanner(
+            "hook", "pre-push", "--format", "json"
+        )
+
+        self.assertEqual((0, ""), (code, error))
+        self.assertNotIn(CANARY, output)
+        checks = json.loads(output)["checks"]
+        self.assertEqual(["doctor", "history"], [check["name"] for check in checks])
 
     def test_the_repository_path_hides_a_private_value(self) -> None:
         folder = self.root.name

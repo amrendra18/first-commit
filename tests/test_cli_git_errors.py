@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from first_commit import cli
-from first_commit.git import GIT_STATUS_FIX, GitError, run_git
+from first_commit.git import GitError, run_git
+from first_commit.models import LimitExceededError
 from tests.support import initialize_repository
 from tests.support import run_git as fixture_git
 
@@ -41,9 +42,11 @@ class GitFailureMessageTest(unittest.TestCase):
             with self.assertRaises(GitError) as context:
                 run_git(Path(), ("status",))
         self.assertEqual(
-            "Git command `git status` timed out after 120 seconds.\n" + GIT_STATUS_FIX,
+            "Git command `git status` timed out after 120 seconds.\n"
+            "fix: check that `git status` answers in this repository, then rerun.",
             str(context.exception),
         )
+        self.assertIsInstance(context.exception, LimitExceededError)
 
 
 def run_check(root: Path) -> tuple[int, str, str]:

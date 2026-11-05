@@ -6,10 +6,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from first_commit import validation
-from first_commit.checks.privacy import PrivacyPolicy, privacy_findings
+from first_commit.checks.privacy import (
+    PATTERNS,
+    UNAPPROVED_EMAIL_RULE,
+    PrivacyPolicy,
+    privacy_findings,
+)
 from first_commit.models import Candidate, Origin
 from first_commit.policy import parse_policy
-from first_commit.policy_fields import DEFAULT_LIMITS, PolicyError
+from first_commit.policy_fields import (
+    DEFAULT_LIMITS,
+    PRIVACY_DETECTOR_RULES,
+    PolicyError,
+)
 from tests.support import initialize_repository, run_git
 
 MAX_FILE_BYTES = DEFAULT_LIMITS["max_file_bytes"]
@@ -28,6 +37,11 @@ class PrivacyExceptionsTest(unittest.TestCase):
     def policy(self, root, exceptions):
         value = {"schema_version": 1, "private_literal_exceptions": exceptions}
         return parse_policy(json.dumps(value).encode(), root)
+
+    def test_detector_exceptions_accept_exactly_the_detector_rules(self) -> None:
+        detected = {rule_id for rule_id, _, _ in PATTERNS} | {UNAPPROVED_EMAIL_RULE}
+        self.assertEqual(detected, set(PRIVACY_DETECTOR_RULES))
+        self.assertEqual(len(detected), len(PRIVACY_DETECTOR_RULES))
 
     def test_existing_privacy_policy_defaults_to_no_exceptions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -191,11 +191,15 @@ class ContentValidationTest(ValidationFixture):
             ("feat: add checks\n", [], ["message.sections"]),
             (commit_message("feat: add checks"), [], []),
             ("feat: add checks\n\nFree-form body.\n", [], ["message.sections"]),
-            ("plain subject\n", ["message.header"], ["message.header"]),
+            (
+                "plain subject\n",
+                ["message.header"],
+                ["message.header", "message.sections"],
+            ),
             (
                 "feat: " + "a" * 101 + "\n",
                 ["message.subject-length"],
-                ["message.subject-length"],
+                ["message.sections", "message.subject-length"],
             ),
             (
                 "feat: add checks\n\nCredit " + canary + "\n",

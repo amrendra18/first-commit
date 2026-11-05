@@ -109,6 +109,7 @@ class HistoryDigestTest(RepositoryTest):
         scope = PushedScope(self.head(), "origin")
 
         self.refused(push_revisions(self.root, scope), f"commit {older}")
+        run_git(self.root, "remote", "add", "origin", "https://example.invalid/o")
         run_git(self.root, "update-ref", "refs/remotes/origin/main", older)
         check_ignore_file(self.root, push_revisions(self.root, scope))
 
@@ -163,9 +164,10 @@ class BoundedReadTest(RepositoryTest):
         one = self.processes()
         self.stage_files(6)
 
-        # ls-files, two reads of .gitleaksignore, one batch-check, one batch read.
-        self.assertEqual(5, one)
-        self.assertEqual(5, self.processes())
+        # ls-files, two reads of .gitleaksignore, one batch-check, one batch read,
+        # and one read of the clean-filter settings.
+        self.assertEqual(6, one)
+        self.assertEqual(6, self.processes())
 
     def test_read_limits_are_refused(self) -> None:
         self.stage_files(2)

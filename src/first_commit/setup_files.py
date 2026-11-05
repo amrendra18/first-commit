@@ -46,19 +46,22 @@ def create_local_file(root: Path, relative: str, content: bytes, label: str) -> 
     return path
 
 
-def restore_git_config(path: Path, expected: bytes, original: bytes | None) -> None:
+# False when the file changed since setup wrote it, so it was left as it is.
+def restore_git_config(path: Path, expected: bytes, original: bytes | None) -> bool:
     if read_if_present(path) != expected:
-        return
+        return False
     if original is None:
         path.unlink()
-        return
+        return True
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
         temporary = Path(stream.name)
         try:
             stream.write(original)
             stream.flush()
             temporary.chmod(path.stat(follow_symlinks=False).st_mode & 0o777)
-            if read_if_present(path) == expected:
-                temporary.replace(path)
+            if read_if_present(path) != expected:
+                return False
+            temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+    return True

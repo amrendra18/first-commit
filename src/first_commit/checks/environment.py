@@ -25,7 +25,6 @@ def _private_files(
         if (
             PurePosixPath(file.path).name in PUBLIC_BASENAMES
             or file.path in public_paths
-            or file.state == FileState.IGNORED
         ):
             continue
         if file.state == FileState.TRACKED:

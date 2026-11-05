@@ -7,7 +7,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from first_commit import git
 from first_commit.git import sanitized_git_environment
 from tests.support import initialize_repository, run_git
 
@@ -108,9 +110,27 @@ class HookEnvironmentTest(unittest.TestCase):
         self.assertIn("PRE_COMMIT_HOME", names)
         self.assertEqual(set(), names & (set(PUSH_VARIABLES) - {"PRE_COMMIT_HOME"}))
 
+    # Git refuses --literal-pathspecs, which the .gitleaksignore check passes, beside
+    # any other global pathspec setting, so a caller's GIT_ICASE_PATHSPECS would stop
+    # that check.
+    def test_a_caller_icase_pathspec_setting_leaves_literal_pathspecs_working(
+        self,
+    ) -> None:
+        (self.real / "a.txt").write_text("a\n", encoding="utf-8")
+        run_git(self.real, "add", "--", "a.txt")
+        literal = ("--literal-pathspecs", "ls-files", "--", "a.txt")
+        with mock.patch.dict(os.environ, {"GIT_ICASE_PATHSPECS": "1"}):
+            self.assertEqual(b"a.txt\n", git.run_git(self.real, literal))
+
+    # The GIT_CONFIG_* variables that stay are first-commit's own pinned settings.
     def test_product_git_environment_drops_repository_variables(self) -> None:
-        selected = sanitized_git_environment(repository_values(self.real))
-        self.assertEqual(set(), set(selected) & set(REPOSITORY_VARIABLES))
+        caller = repository_values(self.real)
+        selected = sanitized_git_environment(caller)
+        pinned = sanitized_git_environment({})
+        for name in REPOSITORY_VARIABLES:
+            with self.subTest(name=name):
+                self.assertEqual(pinned.get(name), selected.get(name))
+                self.assertNotEqual(caller[name], selected.get(name))
 
     def test_check_scripts_drop_repository_variables_before_they_start(self) -> None:
         project = self.scratch / "project"

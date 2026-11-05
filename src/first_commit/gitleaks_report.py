@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple
 
+from first_commit.git import OBJECT_ID
 from first_commit.json_values import line_number
 from first_commit.paths import (
     MEBIBYTE,
@@ -19,18 +20,21 @@ MAX_REPORT_PATH_CHARS = 4096
 MAX_REPORT_LINE = 1 << 31
 RULE = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 # The only fields read: the rule matches .gitleaksignore entries and is never shown.
-REPORT_FIELDS: tuple[str, ...] = ("RuleID", "File", "StartLine")
+# The commit id of a history finding is not matched content.
+REPORT_FIELDS: tuple[str, ...] = ("RuleID", "File", "StartLine", "Commit")
 
 
 class ReportEntry(NamedTuple):
     rule: str | None
     path: str | None
     line: int | None
+    commit: str | None = None
 
 
 class ReportLocation(NamedTuple):
     path: str | None
     line: int | None
+    commit: str | None = None
 
 
 UNKNOWN_ENTRY = ReportEntry(None, None, None)
@@ -56,6 +60,12 @@ def _report_rule(value: object) -> str | None:
     return value
 
 
+def _report_commit(value: object) -> str | None:
+    if not isinstance(value, str) or OBJECT_ID.fullmatch(value) is None:
+        return None
+    return value
+
+
 def report_fields(entry: Mapping[str, object]) -> tuple[object, ...]:
     return tuple(entry.get(key) for key in REPORT_FIELDS)
 
@@ -63,9 +73,12 @@ def report_fields(entry: Mapping[str, object]) -> tuple[object, ...]:
 def _report_entry(root: Path, entry: object) -> ReportEntry:
     if not isinstance(entry, Mapping):
         return UNKNOWN_ENTRY
-    rule, path, line = report_fields(entry)
+    rule, path, line, commit = report_fields(entry)
     return ReportEntry(
-        _report_rule(rule), _report_path(root, path), line_number(line, MAX_REPORT_LINE)
+        _report_rule(rule),
+        _report_path(root, path),
+        line_number(line, MAX_REPORT_LINE),
+        _report_commit(commit),
     )
 
 
@@ -84,7 +97,11 @@ def report_entries(root: Path, report: Path) -> tuple[ReportEntry, ...]:
 
 def report_locations(entries: tuple[ReportEntry, ...]) -> list[ReportLocation]:
     locations = {
-        ReportLocation(entry.path, entry.line if entry.path is not None else None)
+        ReportLocation(
+            entry.path, entry.line if entry.path is not None else None, entry.commit
+        )
         for entry in entries
     }
-    return sorted(locations, key=lambda item: (item.path or "", item.line or 0))
+    return sorted(
+        locations, key=lambda item: (item.path or "", item.line or 0, item.commit or "")
+    )

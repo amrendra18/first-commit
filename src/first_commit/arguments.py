@@ -190,8 +190,7 @@ def _hook_stages(hook: Parser) -> None:
         _command(
             stages,
             "pre-push",
-            "Check readiness, the working tree, staged bytes, and the commits a "
-            "push sends.",
+            "Check readiness and the commits a push sends.",
         )
     )
     _common(

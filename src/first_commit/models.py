@@ -1,7 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
-from itertools import islice
 from pathlib import Path
 
 GIT_CONFIG_PATH = ".git/config"
@@ -56,6 +55,22 @@ class ConfirmationNeededError(SetupError):
         self.root = root
 
 
+# The error codes say the cause, whichever module raises it; a subclass that also
+# keeps its module's error class carries both.
+class FileAccessError(RuntimeError):
+    pass
+
+
+# A repository file that first-commit refuses to run with, such as .gitleaks.toml.
+class RepositoryContentError(RuntimeError):
+    pass
+
+
+# A size, count, or time limit of the Limits table stopped the run.
+class LimitExceededError(RuntimeError):
+    pass
+
+
 class Origin(StrEnum):
     WORKTREE = "worktree"
     INDEX = "index"
@@ -65,7 +80,6 @@ class Origin(StrEnum):
 class FileState(StrEnum):
     TRACKED = "tracked"
     VISIBLE = "visible"
-    IGNORED = "ignored"
 
 
 class Severity(StrEnum):
@@ -98,17 +112,64 @@ class Finding:
     on_remote: bool = False
     # The fix line reads this too: a repo: local hook declares more keys.
     local_hook: bool = False
+    # The short id of the commit a history or push finding is in; the fix names it.
+    commit: str | None = None
+    # Set by the pre-push checks, whose fix line may say to fetch first.
+    pushed: bool = False
 
 
-# Checks pass a lazy iterable, so a spent budget skips the rest of the check's work.
+# Holds at most room findings. A warning never takes the room of a later error: the
+# error replaces the latest warning held. dropped counts each finding left out.
+class KeptFindings:
+    def __init__(self, room: int) -> None:
+        self.room = max(0, room)
+        self.items: list[Finding] = []
+        self.errors = 0
+        self.dropped = 0
+
+    # Errors fill the room, so a later finding changes neither what is shown nor the
+    # result.
+    def full(self) -> bool:
+        return self.errors >= self.room
+
+    def add(self, finding: Finding) -> None:
+        if finding.severity == Severity.WARNING or self.full():
+            if len(self.items) < self.room:
+                self.items.append(finding)
+            else:
+                self.dropped += 1
+            return
+        if len(self.items) >= self.room:
+            latest = max(
+                index
+                for index, item in enumerate(self.items)
+                if item.severity == Severity.WARNING
+            )
+            del self.items[latest]
+            self.dropped += 1
+        self.items.append(finding)
+        self.errors += 1
+
+
+# Checks pass a lazy iterable, so a budget of errors skips the rest of the check's
+# work; past warnings the check reads on, so a later error still decides.
 def capped(findings: Iterable[Finding], max_findings: int) -> list[Finding]:
-    return list(islice(findings, max(0, max_findings)))
+    kept = KeptFindings(max_findings)
+    if not kept.full():
+        for finding in findings:
+            kept.add(finding)
+            if kept.full():
+                break
+    return kept.items
 
 
+# not_shown counts the findings the cap left out; a check that stopped at its budget
+# may have had more, so it is a lower bound.
 @dataclass(frozen=True)
 class Result:
     scope: str
     findings: tuple[Finding, ...]
+    not_shown: int = 0
 
     @property
     def passed(self) -> bool:

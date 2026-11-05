@@ -24,7 +24,7 @@ RULES = (
     "Never read private-key contents or print matched private content.",
     "Put the project's own tests and builds in the project's own hooks.",
     "Never add a switch or setting that turns a check off.",
-    "After setup, run `first-commit doctor` and `first-commit check`.",
+    "After setup, run `first-commit doctor`. Run `first-commit check` once the",
     "Setup writes each starter file once; the project owns it from then on.",
 )
 

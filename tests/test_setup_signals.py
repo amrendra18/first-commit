@@ -104,7 +104,7 @@ class SetupSignalTest(SetupFixture):
         ):
             self.assertEqual(CTRL_C_UNDONE, self.stopped_setup())
 
-    def test_ctrl_c_in_the_setup_command_prints_one_line_and_exits_two(self) -> None:
+    def test_ctrl_c_in_the_setup_command_prints_one_line_and_exits_one(self) -> None:
         self.local_hooks()
         machine = tempfile.TemporaryDirectory()
         self.addCleanup(machine.cleanup)

@@ -147,7 +147,7 @@ class FirstCommitSetupTest(SetupFixture):
             "first_commit.setup_files_plan.importlib.metadata.distribution"
         ) as distribution:
             distribution.return_value.read_text.return_value = "wrong license"
-            with self.assertRaisesRegex(SetupError, "Packaged Apache"):
+            with self.assertRaisesRegex(DependencyError, "Packaged Apache"):
                 setup_repository(
                     self.root,
                     SetupRequest(

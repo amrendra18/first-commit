@@ -5,8 +5,8 @@
 **Start a new Git project in one command, with hooks, signing, and starter
 files already in place.**
 
-Its hooks then stop a secret, a private value, or an unsigned commit on your
-machine, before it becomes history.
+Its hooks stop a secret or a private value on your machine, before it
+becomes history.
 
 [Install](#install) it, then start a project:
 
@@ -25,20 +25,19 @@ One `setup` run in an empty folder:
    template, and the project policy file (`.repo-policy.json`);
 2. turns on SSH commit signing;
 3. installs Gitleaks (a secret scanner) and Git hooks through pre-commit (a
-   tool that runs Git hooks), pinned to one commit of this
-   repository.
+   Git hook runner), pinned to one commit of this repository.
 
-From then on, the hooks check every commit and push:
+Then the hooks check every commit and push:
 
 | When | What is checked |
 | --- | --- |
 | Commit | Secrets, keys and tokens, home paths, unapproved emails, your private values, forbidden paths, dotenv files, `@no-commit` markers, text hygiene, required documents |
-| Commit message | Format and review sections, secrets, private values, identity, and signing |
-| Push | Secrets and private values in the pushed commits, their messages, and their tags |
+| Commit message | Format and review sections, secrets, private values, identity, and signing settings |
+| Push | Signatures, plus secrets, keys, home paths, emails, private values, and file size in the pushed commits, their messages, and tags |
 
-A finding never prints the text it matched. It prints a `fix:` line instead.
+A finding prints a `fix:` line, never the matched text.
 
-The hooks run on your machine, so `git commit --no-verify` skips them. Shared
+The hooks run locally, so `git commit --no-verify` skips them. Shared
 repositories still need server-side rules; see [SECURITY.md](SECURITY.md).
 
 ## Requirements
@@ -56,7 +55,7 @@ repositories still need server-side rules; see [SECURITY.md](SECURITY.md).
 
 ## Install
 
-To check the release first, compare the commit SHA this prints with the
+First, compare the commit SHA this prints with the
 [release page](https://github.com/amrendra18/first-commit/releases/tag/v0.6.0).
 If they differ, do not install.
 
@@ -99,7 +98,7 @@ first-commit help --format markdown > ~/.codex/skills/first-commit/SKILL.md
 2. Setup writes the project's files and local Git settings, and saves your
    identity in `~/.config/first-commit/identity.json`
    (`$XDG_CONFIG_HOME/first-commit/identity.json` when `XDG_CONFIG_HOME` is
-   set). That folder, first-commit's state folder, also holds your
+   set). That state folder also holds your
    [private-values list](#project-settings). Set `XDG_CONFIG_HOME` to move it,
    or `FIRST_COMMIT_IDENTITY_FILE` to move the identity file alone.
    pre-commit keeps its hook environments in its own cache.
@@ -144,9 +143,9 @@ git add README.md AGENTS.md .gitignore .editorconfig .gitattributes .gitmessage 
 git commit
 ```
 
-Git opens the template `.gitmessage`. Keep its `<type>(<scope>)!: <subject>`
-line, fill in the four sections, and write `Not run: <reason>` when no test
-applies. Example message:
+Git opens the template `.gitmessage`. Replace each `<...>` placeholder with
+your own text, and write `Not run: <reason>` when no test applies.
+Example message:
 
 ```text
 docs: start the project
@@ -178,6 +177,8 @@ pre-commit run first-commit-setup --hook-stage manual
 The second command sets the clone's identity and signing from your saved
 identity and installs Gitleaks; without one, it prints the command to run.
 Prefix it with `FIRST_COMMIT_TRUST_SELF=1` to trust your key too.
+
+With `--hooks installed`, a clone needs first-commit; run `first-commit setup`.
 
 ## Daily use
 
@@ -222,16 +223,18 @@ A failed setup undoes its changes. Other failures:
    Python older than 3.11. Run `python3 -m pip uninstall pre-commit`, then
    `pipx install --force --python python3.13 pre-commit`, then
    `pre-commit install` in the clone, and retry.
-3. **Setup conflict.** The error names the file or setting and how to resolve
-   it. An existing `.gitignore` must ignore `.local/`. For an existing
+3. **Setup conflict.** The error names the file or setting and the fix.
+   An existing `.gitignore` must ignore `.local/`. For an existing
    `.pre-commit-config.yaml`, see
    [Hook file rules](ARCHITECTURE.md#hook-file-rules).
-4. **Wrong identity or key.** Run the commands below in the checkout. Then
+4. **Wrong identity or key.** In the checkout, run the commands below,
    correct or delete the identity file from
-   [What install writes](#what-install-writes) and run setup again.
+   [What install writes](#what-install-writes), and run setup again
+   (`--trust-self` trusts the new key).
 
    ```sh
    rm .local/first-commit/contributor.json
+   rm -f .local/first-commit/allowed-signers
    git config --local --unset user.name
    git config --local --unset user.email
    git config --local --unset user.signingkey
@@ -244,7 +247,7 @@ A failed setup undoes its changes. Other failures:
    `$PRE_COMMIT_HOME/pre-commit.log`, or
    `$XDG_CACHE_HOME/pre-commit/pre-commit.log` when only `XDG_CACHE_HOME` is
    set. Check the hook URL and network access, then rerun setup.
-7. **Too many files.** `check` and the pre-push hook stop with exit 1 and
+7. **Too many files.** `check` and the commit hook stop with exit 1 and
    `File count exceeds the limit of 10,000 paths.` Add generated folders such
    as `node_modules/` to `.gitignore`, untrack them with
    `git rm -r --cached <folder>`, and retry.
@@ -255,22 +258,20 @@ A failed setup undoes its changes. Other failures:
 ## Upgrade
 
 1. Run the `pip install` line of [Install](#install) with the new tag, and
-   any skill lines you use; the link stays.
-2. In the project, run
-   `pre-commit autoupdate --freeze --repo https://github.com/amrendra18/first-commit`.
-   Use the address your `.pre-commit-config.yaml` names. It pins the new
-   tag's commit SHA.
+   any skill lines you use.
+2. Run the `git ls-remote` line of [Install](#install) with the new tag.
+   In `.pre-commit-config.yaml`, set the first-commit `rev:` to the printed SHA.
 3. Review and commit `.pre-commit-config.yaml`. Each clone installs the new
-   hooks on its next run.
+   hooks on its next run. With `--hooks installed`, only step 1 applies.
 
 ## Remove
 
-To undo setup in one checkout, run the commands below. Check
+To undo setup in one checkout, run this block. Check
 `git config --local --list` first; the loop also removes values you set
 yourself.
 
 ```sh
-pre-commit uninstall
+pre-commit uninstall -t pre-commit -t commit-msg -t pre-push
 for key in user.name user.email user.signingkey gpg.format commit.gpgsign \
   tag.gpgsign user.useConfigOnly commit.template gpg.ssh.allowedSignersFile; do
   git config --local --unset-all "$key"
@@ -279,10 +280,11 @@ rm -rf .local/first-commit .local/bin/gitleaks
 ```
 
 To stop using the hooks, delete the first-commit entry from
-`.pre-commit-config.yaml` and commit. When no setup is running, delete the
-lock file setup leaves with `rm .git/first-commit-setup.lock`. To remove the
-tool, delete `~/.local/share/first-commit`, `~/.local/bin/first-commit`, the
-skill folders, and the state folder from
+`.pre-commit-config.yaml` and commit. When no setup runs, delete setup's
+lock file: `rm .git/first-commit-setup.lock`.
+
+To remove the tool, delete `~/.local/share/first-commit`,
+`~/.local/bin/first-commit`, the skill folders, and the state folder from
 [What install writes](#what-install-writes).
 
 ## Learn more
@@ -293,8 +295,6 @@ skill folders, and the state folder from
    prove.
 3. [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and propose a change.
 4. [SECURITY.md](SECURITY.md): report a vulnerability.
-
-first-commit meets tool contract 1.1.
 
 ## License and credits
 

@@ -81,11 +81,35 @@ class MessagesTest(unittest.TestCase):
             with self.subTest(header=header):
                 findings = self.findings(header)
                 self.assertEqual(
-                    ["message.header"], [item.rule_id for item in findings]
+                    ["message.header", "message.sections"],
+                    [item.rule_id for item in findings],
                 )
                 self.assertEqual("error", findings[0].severity)
                 self.assertEqual("<commit-message>", findings[0].path)
                 self.assertNotIn("add checks", findings[0].summary)
+
+    def test_bad_header_also_reports_missing_sections(self) -> None:
+        for text in ("did stuff\n", "did stuff\n\nFree-form body.\n"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    ["message.header", "message.sections"],
+                    [item.rule_id for item in self.findings(text)],
+                )
+        self.assertEqual(
+            ["message.header"],
+            [item.rule_id for item in self.findings(self.message("did stuff"))],
+        )
+
+    def test_a_subject_over_the_limit_also_reports_missing_sections(self) -> None:
+        for text in ("fix: " + "a" * 101 + "\n", "fix: " + "a" * 101 + "\n\nBody.\n"):
+            with self.subTest(text=text[-8:]):
+                self.assertEqual(
+                    [
+                        ("message.sections", "error"),
+                        ("message.subject-length", "error"),
+                    ],
+                    [(item.rule_id, item.severity) for item in self.findings(text)],
+                )
 
     def test_length_thresholds_count_subject_characters_not_header_bytes(self) -> None:
         for length, severity, rule in (

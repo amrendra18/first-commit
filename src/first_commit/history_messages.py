@@ -4,18 +4,20 @@ from dataclasses import replace
 from pathlib import Path
 from typing import NamedTuple
 
-from first_commit.candidates import CandidateError
+from first_commit.candidates import object_sizes
 from first_commit.checks.privacy import PrivacyPolicy, privacy_findings, privacy_policy
 from first_commit.git import (
     OBJECT_ID,
+    SHORT_COMMIT,
     GitError,
+    batch_check,
     cat_file_objects,
-    parse_batch_check,
+    listed_commits,
     run_git,
 )
 from first_commit.gitleaks import RULE_ID
 from first_commit.gitleaks_blobs import MESSAGE_PATH, MESSAGE_SUMMARY, message_locations
-from first_commit.models import Candidate, Finding, Origin, Severity
+from first_commit.models import Candidate, Finding, KeptFindings, Origin, Severity
 from first_commit.policy import Policy
 from first_commit.pushed import (
     HISTORY_REVISIONS,
@@ -24,7 +26,6 @@ from first_commit.pushed import (
     remote_patterns,
 )
 
-SHORT_ID_CHARS = 12
 TAG_MESSAGE_PATH = "<tag-message>"
 TAG_TARGET = re.compile(rb"object (" + OBJECT_ID.pattern.encode() + rb")\ntype tag\n")
 
@@ -52,32 +53,12 @@ ON_THE_REMOTE = (
 def _object_sizes(
     root: Path, kind: _MessageKind, object_ids: Sequence[str], max_bytes: int
 ) -> dict[str, int]:
-    if not object_ids:
-        return {}
-    names = "".join(object_id + "\n" for object_id in object_ids).encode("ascii")
-    answers = parse_batch_check(
-        run_git(root, ("cat-file", "--batch-check"), names), len(object_ids)
-    )
-    object_type = kind.name.lower()
-    sizes = {}
-    for object_id, found in zip(object_ids, answers, strict=True):
-        if found is None or found.kind != object_type or found.object_id != object_id:
-            raise GitError(f"Git returned an inconsistent {object_type}.")
-        # The limit covers the whole object, headers and signature included.
-        if found.size > max_bytes:
-            raise CandidateError(
-                f"{kind.name} message of {object_id[:SHORT_ID_CHARS]} exceeds the "
-                "size limit."
-            )
-        sizes[object_id] = found.size
-    return sizes
+    label = f"{kind.name} message"
+    return object_sizes(root, object_ids, kind.name.lower(), max_bytes, label)
 
 
 def _commit_ids(root: Path, revisions: Sequence[str]) -> list[str]:
-    commits = run_git(root, ("rev-list", *revisions, "--")).decode("ascii").split()
-    if any(OBJECT_ID.fullmatch(commit) is None for commit in commits):
-        raise GitError("Git returned an invalid commit.")
-    return commits
+    return listed_commits(root, (*revisions, "--"))
 
 
 def _commit_messages(
@@ -89,12 +70,7 @@ def _commit_messages(
 
 
 def _tags_of(root: Path, tags: Sequence[str], commits: frozenset[str]) -> list[str]:
-    if not tags:
-        return []
-    names = "".join(f"{tag}^{{}}\n" for tag in tags).encode("ascii")
-    peeled = parse_batch_check(
-        run_git(root, ("cat-file", "--batch-check"), names), len(tags)
-    )
+    peeled = batch_check(root, [f"{tag}^{{}}" for tag in tags])
     return [
         tag
         for tag, found in zip(tags, peeled, strict=True)
@@ -136,10 +112,7 @@ def _remote_commits(root: Path) -> frozenset[str]:
     patterns = remote_patterns(root)
     if not patterns:
         return frozenset()
-    commits = run_git(root, ("rev-list", *patterns, "--")).decode("ascii").split()
-    if any(OBJECT_ID.fullmatch(commit) is None for commit in commits):
-        raise GitError("Git returned an invalid remote commit.")
-    return frozenset(commits)
+    return frozenset(listed_commits(root, (*patterns, "--")))
 
 
 class MessageScope(NamedTuple):
@@ -155,7 +128,7 @@ def _named(
     if object_id is None:
         return finding
     named = replace(
-        finding, summary=f"{kind.name} {object_id[:SHORT_ID_CHARS]}: {finding.summary}"
+        finding, summary=f"{kind.name} {object_id[:SHORT_COMMIT]}: {finding.summary}"
     )
     if object_id not in pushed:
         return named
@@ -167,36 +140,35 @@ def _named(
     )
 
 
+# Reads on past warnings, such as findings in commits a remote holds, so a later
+# error still decides; it stops once kept holds only errors.
 def _message_findings(
     scan: _MessageScan,
     kind: _MessageKind,
     messages: Iterable[tuple[str, bytes]],
-    max_findings: int,
-) -> list[Finding]:
-    if max_findings <= 0:
-        return []
-    findings: list[Finding] = []
+    kept: KeptFindings,
+) -> None:
+    if kept.full():
+        return
 
     def privacy_checked() -> Iterator[Candidate]:
         for object_id, message in messages:
-            if len(findings) >= max_findings:
+            if kept.full():
                 return
             candidate = Candidate(kind.path, message, Origin.MESSAGE)
-            room = max_findings - len(findings)
-            findings.extend(
-                _named(item, kind, object_id, scan.pushed)
-                for item in privacy_findings(candidate, scan.privacy, max_findings=room)
-            )
+            for item in privacy_findings(
+                candidate, scan.privacy, max_findings=kept.room
+            ):
+                kept.add(_named(item, kind, object_id, scan.pushed))
             yield Candidate(object_id, message, Origin.MESSAGE)
 
     for object_id, line in message_locations(scan.root, privacy_checked()):
-        if len(findings) >= max_findings:
+        if kept.full():
             break
         secret = Finding(
             rule_id=RULE_ID, path=kind.path, summary=kind.summary, line=line
         )
-        findings.append(_named(secret, kind, object_id, scan.pushed))
-    return findings[:max_findings]
+        kept.add(_named(secret, kind, object_id, scan.pushed))
 
 
 def history_message_findings(
@@ -218,13 +190,10 @@ def history_message_findings(
         _remote_commits(root) if scope.warn_on_remote else frozenset(),
     )
     commits = _commit_ids(root, revisions)
-    findings = _message_findings(
-        scan, COMMIT, _commit_messages(root, commits, max_bytes), max_findings
-    )
+    kept = KeptFindings(max_findings)
+    _message_findings(scan, COMMIT, _commit_messages(root, commits, max_bytes), kept)
     tags = _tag_messages(
         root, max_bytes, None if pushed is None else frozenset(commits)
     )
-    findings += _message_findings(
-        scan._replace(pushed=frozenset()), TAG, tags, max_findings - len(findings)
-    )
-    return findings
+    _message_findings(scan._replace(pushed=frozenset()), TAG, tags, kept)
+    return kept.items

@@ -313,10 +313,15 @@ class HookSourceSetupTest(SetupFixture):
             "first_commit.setup.subprocess.run",
             return_value=subprocess.CompletedProcess([], 128),
         ):
-            with self.assertRaisesRegex(
-                DependencyError, "Git exited 128.*--transport ssh"
-            ):
+            with self.assertRaises(DependencyError) as failed:
                 _preflight_source(self.root, HTTPS_REPOSITORY)
+        self.assertEqual(
+            f"Hook source preflight: Git exited 128 for {HTTPS_REPOSITORY}.\n"
+            "fix: check network access to github.com and any proxy settings, then "
+            "run setup again; with a GitHub SSH key, --transport ssh is another "
+            "route.",
+            str(failed.exception),
+        )
         with patch(
             "first_commit.setup.subprocess.run",
             side_effect=OSError("private-canary"),

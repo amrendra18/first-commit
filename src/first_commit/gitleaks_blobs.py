@@ -2,11 +2,17 @@ import bisect
 import os
 import re
 from collections.abc import Collection, Iterable, Iterator, Sequence
+from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
-from first_commit.candidates import staged_candidates
+from first_commit.candidates import (
+    filtered_candidates,
+    filtered_staged_paths,
+    staged_candidates,
+)
 from first_commit.git import run_git
+from first_commit.git_attributes import configured_drivers, paths_with_driver
 from first_commit.gitleaks import RULE_ID, STAGED_SCOPE_PATH, STAGED_SUMMARY, scan_stdin
 from first_commit.gitleaks_ignore import check_ignore_file
 from first_commit.gitleaks_report import ReportEntry
@@ -79,7 +85,13 @@ class _Batch(NamedTuple):
     paths: tuple[str, ...]
 
 
-# Hidden: the staged bytes of these paths are never read by `gitleaks git --staged`.
+# `gitleaks git --staged` reads a textconv driver's output, which may drop a key.
+def _converted_paths(root: Path, paths: Sequence[str]) -> set[str]:
+    drivers = configured_drivers(root, "diff", ("textconv",))
+    return paths_with_driver(root, paths, "diff", drivers)
+
+
+# Hidden: `gitleaks git --staged` never reads the staged bytes of these paths.
 def hidden_staged_paths(root: Path, paths: Sequence[str]) -> tuple[str, ...]:
     raw = run_git(
         root,
@@ -98,10 +110,13 @@ def hidden_staged_paths(root: Path, paths: Sequence[str]) -> tuple[str, ...]:
         for entry in raw.split(b"\0")
         if entry.startswith(BINARY_NUMSTAT)
     }
+    converted = _converted_paths(root, paths)
     return tuple(
         path
         for path in paths
-        if path in binary or any(pattern.search(path) for pattern in ALLOWLIST)
+        if path in binary
+        or path in converted
+        or any(pattern.search(path) for pattern in ALLOWLIST)
     )
 
 
@@ -151,6 +166,8 @@ def _finding(
 
 
 # A blob over the byte limit is not read: the staged check reports it as too large.
+# A clean-filter file is also read from its working copy; the staged check reports
+# a copy that is too large or cannot be read.
 def scan_hidden_staged(
     root: Path,
     paths: Sequence[str],
@@ -162,7 +179,8 @@ def scan_hidden_staged(
     if not paths or max_findings <= 0:
         return ()
     hidden = hidden_staged_paths(root, paths)
-    if not hidden:
+    filtered = filtered_staged_paths(root, paths)
+    if not hidden and not filtered:
         return ()
     ignored = {
         (entry.path, entry.rule, entry.line)
@@ -172,7 +190,11 @@ def scan_hidden_staged(
     scanner = scanner or Scanner("gitleaks", None)
     max_files, max_bytes = limits
     findings: set[Finding] = set()
-    for batch in _batches(staged_candidates(root, max_files, max_bytes, hidden)):
+    contents = chain(
+        staged_candidates(root, max_files, max_bytes, hidden),
+        filtered_candidates(root, filtered, max_bytes).loaded,
+    )
+    for batch in _batches(contents):
         for entry in scan_stdin(root, scanner, batch.content):
             finding = _finding(entry, batch, ignored)
             if finding is not None:

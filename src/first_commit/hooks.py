@@ -36,6 +36,7 @@ MALFORMED = "Hook configuration is malformed."
 PUSH_CHECK_RULE = "hooks.push-check"
 PUSH_REVISION_RULE = "hooks.push-revision"
 INSTALLED_COMMAND = "first-commit"
+LAUNCHER = "bin/first-commit"
 INSTALLED_COMMAND_RULE = "hooks.installed-command"
 DECLARATION_RULES = {
     HOOK_IDS["pre-commit"]: "hooks.staged-check",
@@ -171,13 +172,21 @@ def load_hook_config(raw: bytes) -> dict[str, Any]:
     UniqueLoader.add_constructor(
         yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping
     )
-    try:
-        text = raw.decode("utf-8")
+
+    def require_simple(text: str) -> None:
         for number, token in enumerate(yaml.scan(text)):
             if number >= MAX_YAML_TOKENS or isinstance(token, yaml.tokens.AliasToken):
                 raise SetupError("Hook configuration is too complex or uses aliases.")
+
+    try:
+        text = raw.decode("utf-8")
+        require_simple(text)
         data = yaml.load(text, Loader=UniqueLoader)  # noqa: S506 - UniqueLoader subclasses SafeLoader
-    except (UnicodeDecodeError, yaml.YAMLError, RecursionError) as error:
+    except SetupError:
+        raise
+    # ValueError also covers bad UTF-8, a number over 4,300 digits, and an
+    # impossible date such as 2001-02-30.
+    except (ValueError, yaml.YAMLError, RecursionError) as error:
         raise SetupError(MALFORMED) from error
     if not isinstance(data, dict):
         raise SetupError(MALFORMED)
@@ -220,11 +229,40 @@ def _runs_only_at(stages: object, stage: str) -> bool:
     )
 
 
+# bin/first-commit names a file in the repository, so it runs first-commit's checks
+# only in the checkout whose code is running; anywhere else, repository content
+# would choose the program.
+def own_checkout(root: Path) -> bool:
+    try:
+        return root.samefile(Path(__file__).resolve().parents[2])
+    except OSError:
+        return False
+
+
+def runs_launcher(hook: Mapping[str, Any]) -> bool:
+    entry = hook.get("entry")
+    try:
+        words = shlex.split(entry) if isinstance(entry, str) else []
+    except ValueError:
+        return False
+    return words[:1] == [LAUNCHER]
+
+
+# True when a first-commit hook or a push-check hook runs bin/first-commit outside its
+# own checkout; setup refuses the file, and doctor warns as for a changed hook.
+def foreign_launcher(root: Path, entries: list[HookEntry]) -> bool:
+    return not own_checkout(root) and any(
+        runs_launcher(hook)
+        and (hook["id"] in HOOK_IDS.values() or runs_push_check(hook))
+        for _, hook in entries
+    )
+
+
 def _local_hook_conflicts(hook: Mapping[str, Any], stage: str) -> bool:
     return bool(
         set(hook) - LOCAL_HOOK_FIELDS
         or hook.get("entry")
-        not in (f"first-commit hook {stage}", f"bin/first-commit hook {stage}")
+        not in (f"{INSTALLED_COMMAND} hook {stage}", f"{LAUNCHER} hook {stage}")
         or hook.get("language") != "system"
         or hook.get("always_run") is not True
         or hook.get("pass_filenames") is not (stage == "commit-msg")
@@ -277,8 +315,11 @@ def _is_shipped_push_hook(
     )
 
 
-def _missing_push_rule(entries: list[HookEntry]) -> str | None:
-    if any(runs_push_check(hook) for _, hook in entries):
+def _missing_push_rule(entries: list[HookEntry], *, own: bool) -> str | None:
+    if any(
+        runs_push_check(hook) and (own or not runs_launcher(hook))
+        for _, hook in entries
+    ):
         return None
     pinned = [
         repository.get("rev")
@@ -293,7 +334,7 @@ def _missing_push_rule(entries: list[HookEntry]) -> str | None:
 
 # Doctor leaves out the rev that setup compares: a hook pinned to another commit
 # still runs that commit's checks.
-def _undeclared_rules(entries: list[HookEntry]) -> list[str]:
+def _undeclared_rules(entries: list[HookEntry], *, own: bool) -> list[str]:
     rules = []
     for identifier, rule in DECLARATION_RULES.items():
         declared = [entry for entry in entries if entry[1]["id"] == identifier]
@@ -301,6 +342,7 @@ def _undeclared_rules(entries: list[HookEntry]) -> list[str]:
             len(declared) != 1
             or not approved_source(declared[0][0])
             or declaration_conflicts(*declared[0])
+            or (not own and runs_launcher(declared[0][1]))
         ):
             rules.append(rule)
     return rules
@@ -364,8 +406,9 @@ def _hook_file_findings(root: Path) -> list[Finding]:
         entries = []
         rules = [*DECLARATION_RULES.values(), PUSH_CHECK_RULE]
     else:
-        push_rule = _missing_push_rule(entries)
-        rules = _undeclared_rules(entries) + ([push_rule] if push_rule else [])
+        own = own_checkout(root)
+        push_rule = _missing_push_rule(entries, own=own)
+        rules = _undeclared_rules(entries, own=own) + ([push_rule] if push_rule else [])
     local = any(
         repository["repo"] == LOCAL_REPOSITORY and hook["id"] in HOOK_IDS.values()
         for repository, hook in entries

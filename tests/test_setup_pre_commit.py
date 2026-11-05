@@ -289,7 +289,9 @@ class PreCommitSetupTest(SetupFixture):
         with patch(
             "first_commit.setup_apply.run_pre_commit", side_effect=edited_failure
         ):
-            with self.assertRaises(DependencyError):
+            with self.assertRaisesRegex(
+                SetupFailedError, "left the Git settings as they are"
+            ):
                 setup_repository(
                     self.root, SetupRequest(revision=REVISION), contributor=self.person
                 )

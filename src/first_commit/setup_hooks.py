@@ -131,8 +131,9 @@ def _revision_error(declared: object, revision: str | None) -> SetupError:
         return SetupError(
             f"{HOOK_CONFIG} sets the first-commit rev to {shown}, which is not a "
             f"{REVISION_CHARS}-character commit SHA; a tag can move, so setup accepts "
-            "only the commit. Run `pre-commit autoupdate --freeze`, or set rev to the "
-            "tag's commit SHA."
+            "only the commit. Run the `git ls-remote` line of Install in the "
+            "first-commit README with that tag, and set rev to the SHA it prints; "
+            "`pre-commit autoupdate --freeze` would move to the latest release."
         )
     return SetupError(
         f"The first-commit hook revision conflicts: {HOOK_CONFIG} sets rev to "

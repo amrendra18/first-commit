@@ -111,7 +111,10 @@ def parse_contributor(raw: bytes) -> Contributor:
     )
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=duplicate)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+    except ContributorError:
+        raise
+    # ValueError also covers bad UTF-8, bad JSON, and a number over 4,300 digits.
+    except (ValueError, RecursionError) as error:
         raise ContributorError("Contributor record is not valid UTF-8 JSON.") from error
     if not isinstance(data, dict) or set(data) != RECORD_FIELDS:
         raise ContributorError("Contributor record has invalid fields.")

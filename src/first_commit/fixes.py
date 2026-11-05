@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from first_commit import git
 from first_commit.checks.identity import (
     ALLOWED_SIGNERS_PATH,
     SIGNATURE_TRUST_RULE,
@@ -6,6 +9,7 @@ from first_commit.checks.identity import (
     TRUST_SETTING,
 )
 from first_commit.contributor import CONTRIBUTOR_PATH
+from first_commit.generated_files import proposal_name
 from first_commit.gitleaks_blobs import MESSAGE_PATH
 from first_commit.gitleaks_ignore_format import IGNORE_PATH
 from first_commit.gitleaks_scanner import LOCAL_SCANNER_PATH, SCANNER_VERSION
@@ -14,6 +18,7 @@ from first_commit.models import Finding
 from first_commit.paths import MEBIBYTE
 from first_commit.policy import POLICY_PATH, REQUIRED_DOCUMENTS
 from first_commit.policy_fields import DEFAULT_LIMITS
+from first_commit.pushed_signatures import RULE_ID as UNSIGNED_COMMIT_RULE
 from first_commit.setup_command import (
     HOOK_CONFIG,
     SETUP_HOOK_COMMAND,
@@ -80,6 +85,15 @@ COMMON_FIXES = {
         "Run git rm --cached on this path, add it to .gitignore, and replace any "
         "secret it held."
     ),
+    "files.filtered-unreadable": (
+        "Move whatever is at that path aside, then restore the file with git "
+        "checkout -- on its path, or unstage it with git restore --staged; then "
+        "commit again."
+    ),
+    "files.filtered-too-large": (
+        "Review the file by hand before you push: first-commit reads at most 10 MiB "
+        "of a clean-filter file's working copy."
+    ),
     "files.too-large": (
         f"Make the file smaller than {DEFAULT_LIMITS['max_file_bytes'] // MEBIBYTE} "
         "MiB, or keep it out of Git: git rm --cached it if staged, and add it to "
@@ -97,6 +111,11 @@ COMMON_FIXES = {
         "Stage the files to commit with git add, including "
         + " and ".join(REQUIRED_DOCUMENTS)
         + "."
+    ),
+    UNSIGNED_COMMIT_RULE: (
+        "Sign each unpushed commit from the oldest unsigned one on: git commit "
+        "--amend --no-edit --gpg-sign for the newest, else git rebase --force-rebase "
+        "--gpg-sign <its id>^; then push again."
     ),
     "history.whole-history": (
         "Nothing was left out: this run checked every commit. To check only new "
@@ -133,8 +152,9 @@ COMMON_FIXES = {
         "fix(setup): keep the existing policy."
     ),
     "message.sections": (
-        "Add Why:, Changes:, Test Plan:, and Risks: to the message body, in that "
-        "order; .gitmessage shows the layout."
+        "Give Why:, Changes:, Test Plan:, and Risks: each a line of your own, in that "
+        "order, and replace the template lines <reason>, <changes>, "
+        "<commands and results>, and <risks>."
     ),
     "message.subject-length": "Shorten the subject and move the details to the body.",
     "message.subject-punctuation": "Delete the punctuation at the end of the subject.",
@@ -202,10 +222,36 @@ def _setup_fixes(setup: str, trust: str, revision_source: str = "") -> dict[str,
         ),
         SIGNATURE_TRUST_RULE: f"Run {trust} in this checkout to trust your own signing key.",
         SIGNERS_FILE_RULE: (
-            f"Run git config --local --unset {TRUST_SETTING}, then run {trust} to "
-            "write the file again."
+            f"Run {trust} to write {ALLOWED_SIGNERS_PATH} again; if {TRUST_SETTING} "
+            "names another file, restore it."
         ),
     }
+
+
+# The fixes that send the person to setup, which refuses a linked worktree.
+SETUP_NAMING_RULES = (
+    *SETUP_RULES,
+    *CONTRIBUTOR_RULES,
+    "secrets.scanner-unavailable",
+    SIGNATURE_TRUST_RULE,
+    SIGNERS_FILE_RULE,
+)
+UNNAMED_MAIN_WORKTREE = "the folder that `git worktree list` prints first"
+WORKTREE_FIX = (
+    "Linked worktrees are not supported, and setup refuses to run in one; commit "
+    "from the main worktree at {main}."
+)
+
+
+# A linked worktree keeps a .git file; a .git link or folder is never one.
+def linked_main_worktree(root: Path) -> Path | None:
+    git_file = root / ".git"
+    if git_file.is_symlink() or not git_file.is_file():
+        return None
+    try:
+        return git.main_worktree(root)
+    except git.GitError:
+        return None
 
 
 HOOK_FIXES = {
@@ -242,6 +288,51 @@ MESSAGE_CHANGES = {
         f"{IGNORE_PATH} does not apply to it"
     ),
 }
+# A secret in a commit stays in the history after a later commit removes it.
+HISTORY_SECRET_FIX = (
+    "Revoke the secret, then remove it from commit {commit}: git rebase -i "
+    "{commit}^ when that commit is not pushed (git rebase -i --root when it is the "
+    "first commit); a pushed commit needs a history "
+    "rewrite and a force push. Record a reviewed false positive as a "
+    f"<commit>:<path>:<rule>:<line> entry in a tracked {IGNORE_PATH} "
+    "(ARCHITECTURE.md in first-commit, Gitleaks exceptions)."
+)
+# A rebase re-creates every commit from the named one on, and --gpg-sign signs each.
+# It flattens merges, which can drop a change made in a merge commit and would sign
+# commits a merge brought in, so a history with merges is left to the person.
+UNSIGNED_COMMIT_FIX = (
+    "Sign commit {commit} on each local branch that holds it (git branch --contains "
+    "{commit} lists them). On a branch where it is the newest commit, switch to "
+    "that branch and run git commit --amend --no-edit --gpg-sign. Where commits "
+    "without a merge follow it, switch to that branch and run git rebase "
+    "--force-rebase --gpg-sign {commit}^ (git rebase --force-rebase --gpg-sign "
+    "--root when it is the first commit). After a merge, re-create those commits "
+    "by hand: a rebase can drop a change made in a merge commit. Then push again."
+)
+# A file version stays in its commit after a later commit removes it, so the
+# change goes in that commit, and an approval in that commit's own policy.
+PUSHED_FILE_FIX = (
+    " Make the change in commit {commit} itself, on each local branch that holds it "
+    "(git branch --contains {commit} lists them): switch to that branch, run git "
+    "rebase -i {commit}^ (git rebase -i --root when it is the first commit), mark it "
+    "edit, amend it, and continue. When {commit} is a merge commit, or a merge "
+    "follows it, re-create those commits by hand: a rebase drops merges. Then push "
+    "again. A later commit that deletes the line leaves it in {commit}."
+)
+# The remote-tracking refs can be older than the remote, as in a fork never fetched,
+# so a push can read a commit the remote already holds.
+FETCH_FIRST = (
+    " When the remote already holds commit {commit}, run git fetch <remote>, then "
+    "push again."
+)
+# Setup writes a proposal beside a document that exists, to merge by hand.
+PROPOSAL_SUFFIX = proposal_name("")
+PROPOSAL_FIX = "Merge this proposal into {document}, then delete the proposal."
+PUSHED_FILE_RULES = frozenset(
+    rule
+    for rule in COMMON_FIXES
+    if rule.startswith("privacy.") or rule == "files.too-large"
+) - {"privacy.forbidden-path"}
 COMMIT_REWORD = (
     ". Commit again, or reword a commit: git commit --amend (last) or git rebase -i "
     "(earlier)."
@@ -261,13 +352,54 @@ TAG_MESSAGE_FIX = (
 )
 
 
-def fix_for(finding: Finding, *, setup_hook: bool = True) -> str | None:
-    if finding.path == MESSAGE_PATH and finding.rule_id in MESSAGE_FIXES:
-        if finding.on_remote:
-            return PUSHED_MESSAGE_FIX
-        return MESSAGE_FIXES[finding.rule_id]
-    if finding.path == TAG_MESSAGE_PATH and finding.rule_id in MESSAGE_FIXES:
-        return TAG_MESSAGE_FIX
+def _message_fix(finding: Finding) -> str | None:
+    if finding.rule_id not in MESSAGE_FIXES:
+        return None
+    if finding.path == MESSAGE_PATH:
+        return (
+            PUSHED_MESSAGE_FIX if finding.on_remote else MESSAGE_FIXES[finding.rule_id]
+        )
+    return TAG_MESSAGE_FIX if finding.path == TAG_MESSAGE_PATH else None
+
+
+# A history or push finding in a commit: the fix names that commit.
+def _commit_fix(finding: Finding) -> str | None:
+    commit = finding.commit
+    if commit is None:
+        return None
+    if finding.rule_id == "secrets.gitleaks":
+        fix = HISTORY_SECRET_FIX.format(commit=commit)
+    elif finding.rule_id == UNSIGNED_COMMIT_RULE:
+        fix = UNSIGNED_COMMIT_FIX.format(commit=commit)
+    elif finding.rule_id in PUSHED_FILE_RULES:
+        change = (
+            COMMON_FIXES[finding.rule_id]
+            .replace(STAGE_POLICY, "")
+            .replace(f"in {POLICY_PATH}", f"in the {POLICY_PATH} of commit {commit}")
+        )
+        fix = change + PUSHED_FILE_FIX.format(commit=commit)
+    else:
+        return None
+    return fix + FETCH_FIRST.format(commit=commit) if finding.pushed else fix
+
+
+# main_worktree is set only in a linked worktree, masked as the caller masks paths.
+def fix_for(
+    finding: Finding, *, setup_hook: bool = True, main_worktree: str | None = None
+) -> str | None:
+    if main_worktree is not None and finding.rule_id in SETUP_NAMING_RULES:
+        return WORKTREE_FIX.format(main=main_worktree)
+    message = _message_fix(finding)
+    if message is not None:
+        return message
+    commit = _commit_fix(finding)
+    if commit is not None:
+        return commit
+    if finding.rule_id == "scaffold.no-commit" and finding.path.endswith(
+        PROPOSAL_SUFFIX
+    ):
+        document = finding.path.removesuffix(PROPOSAL_SUFFIX)
+        return PROPOSAL_FIX.format(document=document)
     if finding.local_hook and finding.rule_id in LOCAL_DECLARE_FIXES:
         return LOCAL_DECLARE_FIXES[finding.rule_id]
     return (HOOK_FIXES if setup_hook else TOOL_FIXES).get(finding.rule_id)

@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from verify_lib.core import PUSH_HOOK, Run, blocked, exited, hook_passed, require
+from verify_lib.core import (
+    MESSAGE,
+    PUSH_HOOK,
+    Run,
+    blocked,
+    exited,
+    hook_passed,
+    require,
+)
 
 # Split so this source holds no token; Gitleaks reports the joined value.
 PUSH_SECRET = 'token = "' + "ghp_" + "skxSJ9z5EMBO3vXNo2" + "Ga7qDBKsBMuOsI2XOq" + '"\n'
@@ -44,6 +52,7 @@ def feature_push(run: Run) -> list[str]:
                 condition=_remote_has(run, remote, "main"),
                 observed="the bare remote holds main",
             ),
+            *_push_unsigned_commit(run, remote),
             *_push_two_branches(run, remote),
         ]
     finally:
@@ -132,5 +141,43 @@ def _push_two_branches(run: Run, remote: Path) -> list[str]:
         require(
             condition=not any(_remote_has(run, remote, branch) for branch in BRANCHES),
             observed="the bare remote received neither branch",
+        ),
+    ]
+
+
+# The commit hooks pass a commit made with --no-gpg-sign; only the push stops it.
+def _push_unsigned_commit(run: Run, remote: Path) -> list[str]:
+    project = run.project
+    _, pushed = run.command(["git", "rev-parse", "HEAD"], project, expect=0)
+    message = run.work / "unsigned-message.txt"
+    message.write_text(MESSAGE, "utf-8")
+    try:
+        run.command(
+            [
+                *("git", "commit", "-q", "--allow-empty", "--no-gpg-sign"),
+                *("-F", message),
+            ],
+            project,
+            expect=0,
+        )
+        _, unsigned = run.command(["git", "rev-parse", "HEAD"], project, expect=0)
+        code, output = run.command(["git", "push", "-q", REMOTE, "main"], project)
+        _, remote_main = run.command(
+            ["git", "--git-dir", remote, "rev-parse", "refs/heads/main"], run.work
+        )
+    finally:
+        run.command(
+            ["git", "update-ref", "refs/heads/main", pushed.strip()], project, expect=0
+        )
+    return [
+        blocked(code, "git push of main with a commit made with --no-gpg-sign"),
+        require(
+            condition=f'git.unsigned-commit ".git": Commit {unsigned.strip()[:12]} '
+            in output,
+            observed="git.unsigned-commit named the unsigned commit's short id",
+        ),
+        require(
+            condition=remote_main.strip() == pushed.strip(),
+            observed="the bare remote's main stayed at the last signed commit",
         ),
     ]

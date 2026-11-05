@@ -12,6 +12,7 @@ from first_commit.gitleaks_scanner import DependencyError
 from first_commit.hooks import (
     HTTPS_REPOSITORY,
     LOCAL_REPOSITORY,
+    foreign_launcher,
     hook_entries,
     installed_command_problem,
     load_hook_config,
@@ -154,7 +155,7 @@ def _license_bytes() -> bytes:
             encoding="utf-8"
         )
     if hashlib.sha256(content.encode("utf-8")).hexdigest() != LICENSE_DIGEST:
-        raise SetupError("Packaged Apache-2.0 license is unavailable.")
+        raise DependencyError("Packaged Apache-2.0 license is unavailable.")
     return content.encode("utf-8")
 
 
@@ -200,6 +201,8 @@ def _support_plan(root: Path, options: SetupOptions) -> dict[Path, bytes]:
                     root, options
                 )
             raise
+        if foreign_launcher(root, entries):
+            raise SetupError("The first-commit hook declaration conflicts.")
         if runs_installed_command(entries):
             _require_installed_command(root)
     ignore = read_if_present(root / ".gitignore")

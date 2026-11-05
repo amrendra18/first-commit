@@ -1,21 +1,33 @@
 import os
+import shlex
 import stat
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from first_commit.git import (
-    INCONSISTENT_OBJECT,
+    INCONSISTENT_ANSWER,
     OBJECT_ID,
+    SHORT_COMMIT,
     GitError,
+    batch_check,
     cat_file_blobs,
-    parse_batch_check,
     run_git,
 )
-from first_commit.models import Candidate, EnvironmentFile, FileState, Origin
+from first_commit.git_attributes import configured_drivers, paths_with_driver
+from first_commit.models import (
+    Candidate,
+    EnvironmentFile,
+    FileAccessError,
+    FileState,
+    LimitExceededError,
+    Origin,
+)
 from first_commit.paths import (
     PathError,
+    PathSizeError,
     confined_path,
+    read_regular_bytes,
     read_worktree_bytes,
 )
 
@@ -25,14 +37,27 @@ STAGE_FIELDS = 3
 # `git ls-tree` prints mode, type, and object id before the path.
 TREE_FIELDS = 3
 IndexEntries = Mapping[str, tuple[str, str]]
+# `git add` takes a file's filter from the working copy's .gitattributes, and the
+# commit stores the staged ones, so a filter named in either counts.
+FILTER_SOURCES = ((), ("--cached",))
 NOT_IN_INDEX = (
     "A staged file has no content in the Git index (the list of staged files).\n"
     "fix: run `git status` to find the file, stage it again with `git add`, then "
     "rerun."
 )
 
+READ_FILTER = b"lfs"
+
 
 class CandidateError(RuntimeError):
+    pass
+
+
+class CandidateFileError(CandidateError, FileAccessError):
+    pass
+
+
+class CandidateLimitError(CandidateError, LimitExceededError):
     pass
 
 
@@ -48,7 +73,7 @@ class LoadedCandidates:
 
 def _require_count(count: int, max_files: int) -> None:
     if count > max_files:
-        raise CandidateError(
+        raise CandidateLimitError(
             f"File count exceeds the limit of {max_files:,} paths. Tracked "
             "files count, and so do untracked files that .gitignore does not hide; "
             "a staged check counts only the staged files.\n"
@@ -111,9 +136,18 @@ def _working_selection(
     return tuple(
         path
         for path in paths
-        if _mode(index_entries, path) != GITLINK_MODE
-        and os.path.lexists(confined_path(root, path))
+        if _mode(index_entries, path) != GITLINK_MODE and _present(root, path)
     )
+
+
+def _present(root: Path, path: str) -> bool:
+    try:
+        return os.path.lexists(confined_path(root, path))
+    except PathError as error:
+        raise CandidateFileError(
+            f"{_unreadable(path, error)}\nfix: a folder on this path is a link out of "
+            "the repository; replace the link with a real folder, then rerun."
+        ) from error
 
 
 def working_candidate_paths(
@@ -145,9 +179,9 @@ def _oversized_worktree_paths(
     try:
         return [path for path in selected if _over_limit(root, path, max_bytes)]
     except PathError as error:
-        raise CandidateError(str(error)) from error
+        raise CandidateFileError(str(error)) from error
     except OSError as error:
-        raise CandidateError("File cannot be read.") from error
+        raise CandidateFileError("File cannot be read.") from error
 
 
 def _over_limit(root: Path, path: str, max_bytes: int) -> bool:
@@ -159,24 +193,47 @@ def _over_limit(root: Path, path: str, max_bytes: int) -> bool:
     return (stat.S_ISREG(kind) or stat.S_ISLNK(kind)) and metadata.st_size > max_bytes
 
 
+# The caller masks private values in the path, then escapes its other control
+# characters; a line break is escaped here, so a file name cannot start a fake
+# fix: line. No private value holds a line break, so the mask still finds it.
+def _unreadable(path: str, error: PathError) -> str:
+    path = path.replace("\n", "\\x0a").replace("\r", "\\x0d")
+    text = f'"{path}": {error}'
+    if not isinstance(error.__cause__, PermissionError):
+        return text
+    # The ./ keeps a path that starts with - from being read as an option.
+    quoted = shlex.quote("./" + path)
+    return (
+        f"{text}\nfix: run `ls -l {quoted}` to see its owner and mode, make it "
+        f"readable (`chmod u+r {quoted}` when you own it) or move it out of the "
+        "repository, then rerun."
+    )
+
+
+def _read_error(path: str, error: PathError) -> CandidateError:
+    if isinstance(error, PathSizeError):
+        return CandidateLimitError(_unreadable(path, error))
+    return CandidateFileError(_unreadable(path, error))
+
+
 # A file that grew past max_bytes since the size pass makes the read raise.
 def _worktree_contents(
     root: Path, selected: Sequence[str], max_bytes: int
 ) -> Iterator[Candidate]:
-    try:
-        for path in selected:
+    for path in selected:
+        try:
             location = confined_path(root, path)
             if not os.path.lexists(location):
                 continue
             content = read_worktree_bytes(root, path, max_bytes)
-            yield Candidate(
-                path=path,
-                content=content,
-                origin=Origin.WORKTREE,
-                regular_file=not location.is_symlink(),
-            )
-    except PathError as error:
-        raise CandidateError(str(error)) from error
+        except PathError as error:
+            raise _read_error(path, error) from error
+        yield Candidate(
+            path=path,
+            content=content,
+            origin=Origin.WORKTREE,
+            regular_file=not location.is_symlink(),
+        )
 
 
 def _ls_files(
@@ -198,45 +255,47 @@ def environment_files(
     try:
         tracked = _ls_files(root, ("--cached",), pathspecs, max_files)
         visible = _ls_files(root, ("--others", per_directory), pathspecs, max_files)
-        ignored = _ls_files(
-            root, ("--others", "--ignored", per_directory), pathspecs, max_files
-        )
     except GitError as error:
         raise CandidateError(str(error)) from error
-    paths = tracked | visible | ignored
+    paths = tracked | visible
     if len(paths) > max_files:
-        raise CandidateError("Environment-file count exceeds the limit.")
+        raise CandidateLimitError("Environment-file count exceeds the limit.")
     return tuple(
         EnvironmentFile(
             path=path,
-            state=(
-                FileState.TRACKED
-                if path in tracked
-                else FileState.VISIBLE
-                if path in visible
-                else FileState.IGNORED
-            ),
+            state=FileState.TRACKED if path in tracked else FileState.VISIBLE,
         )
         for path in sorted(paths)
     )
 
 
-def _batch_input(object_ids: Sequence[str]) -> bytes:
-    if not all(OBJECT_ID.fullmatch(item) for item in object_ids):
-        raise CandidateError("Git returned invalid index metadata.")
-    return "".join(item + "\n" for item in object_ids).encode("ascii")
+# Each name is an object id that must answer as kind. max_bytes covers the whole
+# object, headers and signature included; None sets no limit.
+def object_sizes(
+    root: Path, names: Sequence[str], kind: str, max_bytes: int | None, label: str
+) -> dict[str, int]:
+    sizes = {}
+    for name, found in zip(names, batch_check(root, names), strict=True):
+        if found is None or (found.object_id, found.kind) != (name, kind):
+            raise GitError(INCONSISTENT_ANSWER)
+        if max_bytes is not None and found.size > max_bytes:
+            short = name[:SHORT_COMMIT]
+            raise CandidateLimitError(f"{label} of {short} exceeds the size limit.")
+        sizes[name] = found.size
+    return sizes
 
 
 def _blob_sizes(root: Path, object_ids: Sequence[str]) -> dict[str, int]:
+    if not all(OBJECT_ID.fullmatch(item) for item in object_ids):
+        raise CandidateError("Git returned invalid index metadata.")
     try:
-        raw = run_git(root, ("cat-file", "--batch-check"), _batch_input(object_ids))
-        answers = parse_batch_check(raw, len(object_ids))
+        answers = batch_check(root, object_ids)
     except GitError as error:
         raise CandidateError(str(error)) from error
     sizes = {}
     for object_id, found in zip(object_ids, answers, strict=True):
         if found is not None and found.object_id != object_id:
-            raise CandidateError(INCONSISTENT_OBJECT)
+            raise CandidateError(INCONSISTENT_ANSWER)
         if found is None or found.kind != "blob":
             raise CandidateError(NOT_IN_INDEX)
         sizes[object_id] = found.size
@@ -332,6 +391,69 @@ def staged_candidates(
     return _index_blobs(root, entries, max_bytes)
 
 
+# Git LFS stores only a pointer in the index, so its staged files are also read from
+# their working copy. Other clean filters keep the index copy: an encrypting one,
+# such as git-crypt, stores a secret only encrypted (ARCHITECTURE.md, Known gaps).
+# Git stores a link as its target and never filters it.
+def filtered_staged_paths(root: Path, paths: Sequence[str]) -> tuple[str, ...]:
+    try:
+        drivers = configured_drivers(root, "filter", ("clean", "process")) & {
+            READ_FILTER
+        }
+        if not drivers or not paths:
+            return ()
+        index_entries = _index_entries(root)
+        files = [
+            path for path in paths if _mode(index_entries, path) in REGULAR_FILE_MODES
+        ]
+        filtered = paths_with_driver(root, files, "filter", drivers, FILTER_SOURCES)
+    except GitError as error:
+        raise CandidateError(str(error)) from error
+    return tuple(path for path in files if path in filtered)
+
+
+@dataclass(frozen=True)
+class FilteredCandidates:
+    loaded: LoadedCandidates
+    unreadable: list[str]
+
+
+# Unreadable: the working copy is missing or is not a regular file, so the bytes the
+# filter read are gone.
+def filtered_candidates(
+    root: Path, paths: Sequence[str], max_bytes: int
+) -> FilteredCandidates:
+    readable: list[str] = []
+    oversized: list[str] = []
+    unreadable: list[str] = []
+    for path in paths:
+        try:
+            metadata = os.lstat(confined_path(root, path))
+        except (OSError, PathError):
+            unreadable.append(path)
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            unreadable.append(path)
+        elif metadata.st_size > max_bytes:
+            oversized.append(path)
+        else:
+            readable.append(path)
+    loaded = LoadedCandidates(_filtered_contents(root, readable, max_bytes), oversized)
+    return FilteredCandidates(loaded, unreadable)
+
+
+# A copy that changed since the size pass makes the read raise.
+def _filtered_contents(
+    root: Path, paths: Sequence[str], max_bytes: int
+) -> Iterator[Candidate]:
+    for path in paths:
+        try:
+            content = read_regular_bytes(confined_path(root, path), max_bytes)
+        except PathError as error:
+            raise _read_error(path, error) from error
+        yield Candidate(path=path, content=content, origin=Origin.WORKTREE)
+
+
 def head_candidate(root: Path, path: str, max_bytes: int) -> Candidate | None:
     try:
         run_git(root, ("rev-parse", "--verify", "--quiet", "HEAD^{commit}"))
@@ -357,7 +479,9 @@ def head_candidate(root: Path, path: str, max_bytes: int) -> Candidate | None:
     except CandidateError as error:
         raise CandidateError(unreadable) from error
     if loaded.oversized:
-        raise CandidateError(f"The committed copy of {path} exceeds the size limit.")
+        raise CandidateLimitError(
+            f"The committed copy of {path} exceeds the size limit."
+        )
     return next(iter(loaded))
 
 
@@ -372,5 +496,5 @@ def index_candidate(root: Path, path: str, max_bytes: int) -> Candidate:
     except GitError as error:
         raise CandidateError(str(error)) from error
     if loaded.oversized:
-        raise CandidateError(f"The staged copy of {path} exceeds the size limit.")
+        raise CandidateLimitError(f"The staged copy of {path} exceeds the size limit.")
     return next(iter(loaded))

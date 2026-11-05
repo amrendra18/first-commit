@@ -19,6 +19,7 @@ from verify_lib.core import (
     require,
     signed,
 )
+from verify_lib.filter_journey import filtered_value
 from verify_lib.home_journey import home_repository
 from verify_lib.installed_hooks import installed_form_journey
 
@@ -26,6 +27,7 @@ CANARY = "verify-canary-private-name"
 USER_LIST = ".config/first-commit/private-values.txt"
 USER_LIST_TIGHTENED = f"Private values: set ~/{USER_LIST} to mode 600."
 NAMED_FILE = f"{CANARY}-notes.txt"
+PRIVACY_REMOTE = "privacy-check"
 ZERO = "0" * 40
 # No privacy rule matches a Slack token, so only Gitleaks can block this message.
 SLACK_TOKEN = "xoxb-" + "1234567890123-1234567890123-" + "AbCdEfGhIjKlMnOpQrStUvWx"
@@ -198,6 +200,44 @@ def _private_file_name(run: Run, project: Path) -> list[str]:
     ]
 
 
+# Committed past the hooks and deleted later, the value is still in what a push sends.
+def _pushed_value(run: Run, project: Path) -> list[str]:
+    remote = run.work / "privacy-remote.git"
+    run.command(["git", "init", "-q", "--bare", remote], run.work, expect=0)
+    run.command(["git", "remote", "add", PRIVACY_REMOTE, remote], project, expect=0)
+    _, start = run.command(["git", "rev-parse", "HEAD"], project, expect=0)
+    message = run.work / "message.txt"
+    message.write_text(MESSAGE, "utf-8")
+    commit: list[str | Path] = ["git", "commit", "-q", "--no-verify", "-F", message]
+    push = ["git", "push", "-q", PRIVACY_REMOTE, "main"]
+    try:
+        seed = ["git", "push", "-q", "--no-verify", PRIVACY_REMOTE, "main"]
+        run.command(seed, project, expect=0)
+        (project / "notes.txt").write_text(f"written by {CANARY}\n", "utf-8")
+        run.command(["git", "add", "notes.txt"], project, expect=0)
+        run.command(commit, project, expect=0)
+        _, added = run.command(["git", "rev-parse", "HEAD"], project, expect=0)
+        run.command(["git", "rm", "-q", "notes.txt"], project, expect=0)
+        run.command(commit, project, expect=0)
+        code, output = run.command(push, project)
+    finally:
+        run.command(["git", "update-ref", "refs/heads/main", start.strip()], project)
+        run.command(["git", "remote", "remove", PRIVACY_REMOTE], project)
+    printed = output.count(CANARY)
+    return [
+        blocked(code, "git push of a value committed with --no-verify, then deleted"),
+        require(
+            condition='privacy.private-literal "notes.txt":1: ' in output
+            and f"in commit {added.strip()[:12]}." in output,
+            observed="privacy.private-literal reported at notes.txt:1 in its commit",
+        ),
+        require(
+            condition=printed == 0,
+            observed=f"the private value was never printed (count {printed})",
+        ),
+    ]
+
+
 def feature_privacy(run: Run) -> list[str]:
     project = run.project
     values = project / ".local/first-commit/private-values.txt"
@@ -207,6 +247,8 @@ def feature_privacy(run: Run) -> list[str]:
         observed = [
             *_private_content(run, project),
             *_private_file_name(run, project),
+            *_pushed_value(run, project),
+            *filtered_value(run, project, CANARY),
         ]
     finally:
         for name in ("notes.txt", NAMED_FILE):
@@ -272,6 +314,10 @@ def feature_message(run: Run) -> list[str]:
         blocked(bad, "a commit with the message 'did stuff'"),
         require(
             condition="message.header" in bad_output, observed="message.header reported"
+        ),
+        require(
+            condition="message.sections" in bad_output,
+            observed="message.sections reported",
         ),
         require(
             condition="  fix: Start the message with" in bad_output,

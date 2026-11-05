@@ -103,11 +103,17 @@ class FirstCommitCliTest(CliFixture):
         code, output, error = self.run_cli("check")
         self.assertEqual(2, code)
         self.assertEqual(
-            "error: The project policy file .repo-policy.json has unknown fields.\n",
+            "error: The project policy file .repo-policy.json has unknown fields.\n"
+            "fix: edit .repo-policy.json to match 'Project policy file' in the "
+            "first-commit ARCHITECTURE.md; the accepted fields are schema_version, "
+            "public_emails, commit_body_sections, public_environment_files, "
+            "forbidden_paths, private_literal_exceptions, privacy_detector_exceptions, "
+            "public_github_owner_urls, immutable_vendor_files.\n",
             error,
         )
         self.assertEqual("", output)
         self.assertNotIn(canary, error)
+        self.assertNotIn("additional_documents", error)
 
     def test_unreadable_configuration_names_the_file_and_the_next_step(self) -> None:
         policy = self.root / ".repo-policy.json"
@@ -181,7 +187,9 @@ class FirstCommitCliTest(CliFixture):
         passed = Result("test", ())
         with (
             patch("first_commit.validation.staged", return_value=passed) as staged,
-            patch("first_commit.cli._checks", return_value=[("all", passed)]) as checks,
+            patch(
+                "first_commit.cli._push_checks", return_value=[("all", passed)]
+            ) as checks,
         ):
             code, output, _ = self.run_cli("hook", "pre-commit")
             self.assertEqual(0, code)
@@ -196,16 +204,15 @@ class FirstCommitCliTest(CliFixture):
         passed = Result("test", ())
         with (
             patch("first_commit.validation.doctor", return_value=passed),
-            patch("first_commit.validation.working", return_value=passed),
-            patch("first_commit.validation.staged", return_value=passed),
+            patch("first_commit.validation.working") as working,
+            patch("first_commit.validation.staged") as staged,
             patch("first_commit.validation.history", return_value=passed),
         ):
             code, output, error = self.run_cli("hook", "pre-push")
         self.assertEqual((0, ""), (code, error))
-        self.assertEqual(
-            ["PASS doctor", "PASS working", "PASS staged", "PASS history"],
-            output.splitlines(),
-        )
+        self.assertEqual(["PASS doctor", "PASS history"], output.splitlines())
+        working.assert_not_called()
+        staged.assert_not_called()
 
     def test_error_classes_map_to_fixed_exit_codes(self) -> None:
         for error, expected in (

@@ -1,4 +1,5 @@
 import fcntl
+import hashlib
 import os
 import signal
 import stat
@@ -26,7 +27,12 @@ from first_commit.contributor import (
 )
 from first_commit.git import GitError, run_git
 from first_commit.git_settings import local_git_settings
-from first_commit.gitleaks_scanner import LOCAL_SCANNER_PATH, DependencyError
+from first_commit.gitleaks_scanner import (
+    BINARY_DIGESTS,
+    LOCAL_SCANNER_PATH,
+    DependencyError,
+    scanner_platform,
+)
 from first_commit.hooks import HOOK_TYPES, hook_findings
 from first_commit.models import (
     GIT_CONFIG_PATH,
@@ -76,6 +82,11 @@ SETUP_LOCK_NAME = "first-commit-setup.lock"
 TERMINATING_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
 HELD_SIGNALS = (*TERMINATING_SIGNALS, signal.SIGINT)
 Result = TypeVar("Result")
+CONFIG_KEPT = (
+    f"Setup stopped, and another process changed {GIT_CONFIG_PATH} while setup ran, "
+    "so setup left the Git settings as they are and removed its other changes.\n"
+    "fix: run `git config --local --list` to review the settings, then rerun setup."
+)
 
 
 def terminated_error(number: int) -> SetupTerminatedError:
@@ -140,6 +151,22 @@ def signals_held() -> Iterator[list[int]]:
 
     with _signal_handler(hold, HELD_SIGNALS):
         yield received
+
+
+# A change and its entry in the undo list are one step: a signal waits until both are
+# done, so the rollback knows each change and the undone message stays true. Ctrl-C
+# in a terminal also stops a Git child, so its failure is reported as the stop.
+@contextmanager
+def _recorded() -> Iterator[list[int]]:
+    with signals_held() as received:
+        try:
+            yield received
+        except SETUP_FAILURES as error:
+            if received:
+                raise terminated_error(received[0]) from error
+            raise
+    if received:
+        raise terminated_error(received[0])
 
 
 # A first signal can stop the handler of another failure before the rollback holds
@@ -222,6 +249,7 @@ class _Applied:
     created: list[tuple[Path, bytes | None]] = field(default_factory=list)
     configured: bytes | None = None
     scanner: os.stat_result | None = None
+    scanner_absent: bool = False
     hooks: dict[Path, bytes | None] = field(default_factory=dict)
 
 
@@ -229,22 +257,26 @@ def _write_files(applied: _Applied, contributor: Contributor) -> None:
     plan = applied.plan
     root = plan.root
     for path, content in plan.pending.items():
-        create_exclusive(path, content, 0o644)
-        applied.created.append((path, content))
+        with _recorded():
+            create_exclusive(path, content, 0o644)
+            applied.created.append((path, content))
     require_local_files_ignored(plan)
     if not plan.contributor_exists:
-        create_contributor(root, contributor)
-        record = root / CONTRIBUTOR_PATH
-        applied.created.append((record, read_if_present(record)))
+        with _recorded():
+            create_contributor(root, contributor)
+            record = root / CONTRIBUTOR_PATH
+            applied.created.append((record, read_if_present(record)))
     if not plan.private_values_exist:
-        path = create_local_file(
-            root, PRIVATE_VALUES_PATH, PRIVATE_VALUES_TEMPLATE, "values"
-        )
-        applied.created.append((path, PRIVATE_VALUES_TEMPLATE))
+        with _recorded():
+            path = create_local_file(
+                root, PRIVATE_VALUES_PATH, PRIVATE_VALUES_TEMPLATE, "values"
+            )
+            applied.created.append((path, PRIVATE_VALUES_TEMPLATE))
     trust = plan.git.trust
     if trust is not None and trust.action is TrustAction.WRITE:
-        path = create_local_file(root, ALLOWED_SIGNERS_PATH, trust.content, "trust")
-        applied.created.append((path, trust.content))
+        with _recorded():
+            path = create_local_file(root, ALLOWED_SIGNERS_PATH, trust.content, "trust")
+            applied.created.append((path, trust.content))
 
 
 def _set_git_setting(applied: _Applied, arguments: tuple[str, ...]) -> None:
@@ -255,14 +287,25 @@ def _set_git_setting(applied: _Applied, arguments: tuple[str, ...]) -> None:
         else applied.plan.git.git_config
     )
     if read_if_present(git_config) != expected:
+        # The message names the kept file, so the rollback leaves it unreported.
+        applied.configured = None
         raise SetupBlockedError(
             f"{GIT_CONFIG_PATH} changed while setup ran, so setup stopped and left "
             "the file as it is.\n"
             "fix: run `git config --local --list` to review the settings, then rerun "
             "setup."
         )
-    run_git(applied.plan.root, ("config", "--local", *arguments))
-    applied.configured = read_if_present(git_config)
+    with _recorded() as received:
+        try:
+            run_git(applied.plan.root, ("config", "--local", *arguments))
+        except SETUP_FAILURES:
+            # Ctrl-C in a terminal may stop setup's Git after it wrote the file. Any
+            # other failure keeps the earlier record, so a file another process wrote
+            # in the meantime is never taken for setup's own.
+            if received:
+                applied.configured = read_if_present(git_config)
+            raise
+        applied.configured = read_if_present(git_config)
 
 
 def _write_settings(applied: _Applied) -> None:
@@ -278,9 +321,22 @@ def _write_settings(applied: _Applied) -> None:
 def _install_tools(applied: _Applied, progress: Progress) -> None:
     plan = applied.plan
     root = plan.root
-    # A scanner that appeared after planning is not setup's to roll back.
-    if plan.install_scanner and install_scanner(root):
-        applied.scanner = (root / LOCAL_SCANNER_PATH).stat()
+    target = root / LOCAL_SCANNER_PATH
+    # A scanner that appeared after planning is not setup's to roll back. Whether the
+    # path was free is recorded first: a signal may land after the link and before
+    # the stat, and only a file that was not there before can be setup's.
+    if plan.install_scanner:
+        applied.scanner_absent = not os.path.lexists(target)
+        try:
+            installed = install_scanner(root)
+        except DependencyError:
+            applied.scanner_absent = False
+            raise
+        if installed:
+            applied.scanner = target.stat()
+        else:
+            # Another process put a scanner there first; it is not setup's.
+            applied.scanner_absent = False
     run_pre_commit(
         root,
         ("install-hooks",),
@@ -326,6 +382,14 @@ def _verify(root: Path, contributor: Contributor) -> None:
         raise SetupFailedError("Local identity/signing settings failed verification.")
 
 
+def _pinned_scanner(path: Path) -> bool:
+    expected = BINARY_DIGESTS.get(scanner_platform())
+    if expected is None or path.is_symlink() or not path.is_file():
+        return False
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest() == expected
+
+
 def _same_file(current: os.stat_result, installed: os.stat_result) -> bool:
     return (
         current.st_dev,
@@ -347,16 +411,15 @@ def roll_back_applied(applied: _Applied) -> None:
         if expected is not None and read_if_present(path) == expected:
             path.unlink()
     scanner = root / LOCAL_SCANNER_PATH
-    if (
-        applied.scanner is not None
-        and scanner.exists()
-        and _same_file(scanner.stat(), applied.scanner)
-    ):
+    if applied.scanner is not None:
+        installed = scanner.exists() and _same_file(scanner.stat(), applied.scanner)
+    else:
+        installed = applied.scanner_absent and _pinned_scanner(scanner)
+    if installed:
         scanner.unlink()
-    if applied.configured is not None:
-        restore_git_config(
-            root / GIT_CONFIG_PATH, applied.configured, plan.git.git_config
-        )
+    config_kept = applied.configured is not None and not restore_git_config(
+        root / GIT_CONFIG_PATH, applied.configured, plan.git.git_config
+    )
     for path, content in reversed(applied.created):
         if content is not None and read_if_present(path) == content:
             path.unlink()
@@ -371,6 +434,8 @@ def roll_back_applied(applied: _Applied) -> None:
         if not existed and folder.is_dir():
             with suppress(OSError):
                 folder.rmdir()
+    if config_kept:
+        raise SetupFailedError(CONFIG_KEPT)
 
 
 def apply_plan(
@@ -391,6 +456,8 @@ def apply_plan(
     def recover() -> None:
         try:
             roll_back_applied(applied)
+        except SetupFailedError:
+            raise
         except (OSError, SetupError) as error:
             raise SetupFailedError(
                 "Setup recovery failed; inspect generated files and Git settings."
