@@ -55,15 +55,18 @@ Every command keeps these rules. Changing one is a design change.
 
 1. Only `setup` writes inside the repository or uses the network. `check`,
    `doctor`, and the hooks are read-only and offline; they never run project
-   commands or load remote policy. The one exception is the scanner report: a
-   private temporary folder outside the repository, removed on every exit path.
+   commands or load remote policy. Two exceptions: the scanner report, a
+   private temporary folder outside the repository, removed on every exit path;
+   and the mode of your own user-level
+   [private-values list](#private-values), from which they remove group and other
+   access when you own it.
 2. Commit decisions check the staged bytes from the Git index. The policy
    also comes from the index, so an unstaged edit approves nothing; without a
    staged or committed policy, the working copy's policy applies without its
    exemptions. A commit check also reads the working copy for the
    `@no-commit` marker in generated documents and their proposals, for
    dotenv files that are not ignored, and for local settings: the
-   private-values list, the contributor record, and `.gitleaksignore`, which
+   private-values lists, the contributor record, and `.gitleaksignore`, which
    must equal its staged copy.
 3. Output never holds matched content. `check` and the hooks print each
    private value as `<private value>` in paths, summaries, the repository
@@ -259,7 +262,7 @@ before you commit. See the [example policy](examples/repo-policy.json).
 | `forbidden_paths` | Paths to block: `match` (`exact`, `prefix`, `suffix`), `value`, `reason` |
 | `private_literal_exceptions` | `path`, `line`, `sha256` of the exact line, `reason`. Allows one copy of that line anywhere in the file |
 | `privacy_detector_exceptions` | The same plus one `privacy.*` `rule`. For `privacy.private-key`, `sha256` hashes the whole file |
-| `public_github_owner_urls` | `true` allows a private value only as the owner in a GitHub URL; off by default |
+| `public_github_owner_urls` | `true` allows a private value only inside the owner name of a GitHub URL, such as `<value>-labs` in `https://github.com/<value>-labs/tool`; off by default |
 | `immutable_vendor_files` | Up to 10,000 exact paths under `vendor/`, whole-file `sha256`, `reason`. Unchanged regular files skip email, home-path, trailing-whitespace, and final-newline checks only; symlinks are never exempt. A checksum does not verify the source, so review each file first, and stage the policy before the vendor files |
 
 Each `reason` is one line of at most 500 characters. An error names the entry
@@ -273,6 +276,32 @@ A line digest hashes the line's bytes without its newline, so `echo` piped to
 ```sh
 awk 'NR == 12 { printf "%s", $0 }' path/to/file | shasum -a 256
 ```
+
+## Private values
+
+`check` and the hooks read two lists of private values and apply both. Each
+holds one value per line, at most 256 values and 64 KiB; `#` starts a comment
+line.
+
+| List | Where | Rules |
+| --- | --- | --- |
+| Project | `.local/first-commit/private-values.txt` | A regular file, never a link; ignored by the repository's `.gitignore`, untracked, and mode 600. Otherwise the run stops with exit 2 |
+| User | `~/.config/first-commit/private-values.txt`, or `$XDG_CONFIG_HOME/first-commit/private-values.txt` when that is an absolute path | A regular file, or a link to one, so it can point at a copy kept in another repository |
+
+1. A linked worktree applies the main worktree's project list as well as its
+   own, with the same rules. Values only add.
+2. A user list with a mode wider than 600 never stops a run. When you own the
+   file (for a link, its target), first-commit removes group and other access and
+   prints `Private values: set <list> to mode <mode>.` Otherwise it prints a warning that
+   the list is open to other users, and goes on. It opens the file once, then
+   checks, changes, and reads that one open file. The change removes only group
+   and other access, so a list the owner may run becomes 700.
+3. Messages name the list they come from: the user list as `~/.config/...` or
+   `$XDG_CONFIG_HOME/...`, never by its full path, which may hold a private
+   value; a project list by its path in the repository, with
+   `in the main worktree` for the main worktree's list.
+4. `doctor` reads neither list. `setup` creates the project list when it is
+   missing and says when the user list also applies.
 
 ## Hook file rules
 

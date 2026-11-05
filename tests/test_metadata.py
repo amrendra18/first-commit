@@ -72,6 +72,7 @@ class MetadataTest(unittest.TestCase):
     def test_documentation_inventory_has_one_file_per_contract(self) -> None:
         expected = {
             "AGENTS.md",
+            "CHANGELOG.md",
             "CLAUDE.md",
             "README.md",
             "SECURITY.md",
@@ -88,8 +89,22 @@ class MetadataTest(unittest.TestCase):
         )
         self.assertEqual(expected, actual)
         policy = json.loads((self.root / ".repo-policy.json").read_text("utf-8"))
+        exceptions = policy.pop("private_literal_exceptions")
         self.assertEqual(
-            {"schema_version": 1, "public_emails": [AGENT_TRAILER_EMAIL]}, policy
+            {
+                "schema_version": 1,
+                "public_emails": [AGENT_TRAILER_EMAIL],
+                "public_github_owner_urls": True,
+            },
+            policy,
+        )
+        self.assertEqual(
+            [
+                ("README.md", 296),
+                ("pyproject.toml", 9),
+                ("src/first_commit/hooks.py", 19),
+            ],
+            [(entry["path"], entry["line"]) for entry in exceptions],
         )
         for path in expected - {".agents/skills/first-commit/SKILL.md", "CLAUDE.md"}:
             content = (self.root / path).read_text("utf-8")

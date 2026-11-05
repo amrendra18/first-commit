@@ -67,6 +67,11 @@ class IdentityFileTest(unittest.TestCase):
             Path("/h/.config/first-commit/identity.json"),
             identity_path({"HOME": "/h"}),
         )
+        # The XDG base directory rules ignore a relative path.
+        self.assertEqual(
+            Path("/h/.config/first-commit/identity.json"),
+            identity_path({"XDG_CONFIG_HOME": "relative/config", "HOME": "/h"}),
+        )
 
     def test_save_then_load_round_trips_with_owner_only_modes(self) -> None:
         path = self.home / "deep" / "identity.json"

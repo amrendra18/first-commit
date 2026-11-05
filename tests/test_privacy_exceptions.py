@@ -222,7 +222,6 @@ class PrivacyExceptionsTest(unittest.TestCase):
                 )
         still_private = (
             b"Written by privateowner\n",
-            b"https://github.com/privateowner-fork/tool\n",
             b"https://github.com/someone/privateowner\n",
             b"https://gist.github.com/privateowner/abc\n",
             b"https://github.com/privateowner\n",

@@ -7,6 +7,7 @@ from first_commit.models import Candidate, Origin
 from first_commit.paths import PathError, read_regular_bytes
 from first_commit.policy import POLICY_PATH, PRIVATE_VALUES_PATH
 from first_commit.policy_fields import DEFAULT_LIMITS
+from first_commit.private_values import user_values_label
 from first_commit.setup_command import (
     CHECK_HOOK_COMMAND,
     CHECK_HOOK_ID,
@@ -91,6 +92,8 @@ def _record_lines(plan: SetupPlan, *, dry_run: bool) -> tuple[str, ...]:
         + PRIVATE_VALUES_PATH
         + "; add one private value per line"
     )
+    if plan.user_values_exist:
+        values_line += f"; {user_values_label()} also applies"
     return (
         files_line,
         *kept_lines,

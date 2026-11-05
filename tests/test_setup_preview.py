@@ -147,6 +147,31 @@ class SetupPreviewTest(SetupFixture):
         self.assertEqual(1, checked.call_count)
         self.assertEqual(1, locked.call_count)
 
+    def test_setup_names_the_user_list_when_it_exists(self) -> None:
+        run_git(self.root, "init", "-q")
+        self.local_hooks()
+        config = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"XDG_CONFIG_HOME": config}))
+        user_list = Path(config, "first-commit/private-values.txt")
+        user_list.parent.mkdir()
+        user_list.write_text("# No values yet.\n", encoding="utf-8")
+        also = "; $XDG_CONFIG_HOME/first-commit/private-values.txt also applies"
+        preview = setup_repository(
+            self.root,
+            SetupRequest(revision=REVISION, dry_run=True),
+            contributor=self.person,
+        )
+        self.assertIn(
+            "Private values: would create .local/first-commit/private-values.txt;"
+            " add one private value per line" + also,
+            preview,
+        )
+        setup_repository(
+            self.root, SetupRequest(revision=REVISION), contributor=self.person
+        )
+        repeated = setup_repository(self.root, SetupRequest(revision=REVISION))
+        self.assertIn("Private values: retained" + also, repeated)
+
 
 class SetupRecoveryTest(SetupFixture):
     def lock(self) -> Path:

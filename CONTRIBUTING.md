@@ -117,9 +117,8 @@ For maintainers. The version is `__version__` in
 document with it.
 
 1. In one commit, set the new version in `src/first_commit/__init__.py`,
-   `pyproject.toml`, and the README install and tag-check lines. From the
-   second release on, keep a `CHANGELOG.md` with one entry per major release,
-   and add it to the document list in `tests/test_metadata.py`.
+   `pyproject.toml`, and the README install and tag-check lines, and add the
+   release's entry to [CHANGELOG.md](CHANGELOG.md).
 2. Run `scripts/release`. It stops unless the tree is clean, HEAD is on a
    branch, and the tag is new or already names HEAD. It then runs
    `scripts/check full`, `scripts/check matrix`, and `scripts/verify full`,

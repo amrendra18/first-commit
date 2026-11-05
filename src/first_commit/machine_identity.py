@@ -41,15 +41,26 @@ def _expand_home(value: str) -> Path:
         return Path(value)
 
 
+# The XDG base directory rules ignore a relative XDG_CONFIG_HOME.
+def xdg_config_home(environment: Mapping[str, str]) -> str | None:
+    value = environment.get("XDG_CONFIG_HOME", "")
+    return value if Path(value).is_absolute() else None
+
+
+def config_folder(environment: Mapping[str, str] | None = None) -> Path:
+    values = os.environ if environment is None else environment
+    base = xdg_config_home(values) or Path(
+        values.get("HOME") or _expand_home("~"), ".config"
+    )
+    return Path(base) / "first-commit"
+
+
 def identity_path(environment: Mapping[str, str] | None = None) -> Path:
     values = os.environ if environment is None else environment
     chosen = values.get(PATH_VARIABLE)
     if chosen:
         return _expand_home(chosen)
-    base = values.get("XDG_CONFIG_HOME") or Path(
-        values.get("HOME") or _expand_home("~"), ".config"
-    )
-    return Path(base) / "first-commit" / "identity.json"
+    return config_folder(values) / "identity.json"
 
 
 def load_identity(path: Path) -> Contributor | None:

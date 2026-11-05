@@ -51,7 +51,8 @@ PRIVATE_VALUES_TEMPLATE = (
     b"# One private value per line, such as your real name or home folder name.\n"
     b"# The hooks block commits whose files, file names, or messages contain a value\n"
     b"# here, and pushes whose commit messages contain one.\n"
-    b"# Git ignores this file; never commit it.\n"
+    b"# Git ignores this file; never commit it. Values for every project go in\n"
+    b"# ~/.config/first-commit/private-values.txt (or under $XDG_CONFIG_HOME).\n"
 )
 SETUP_FAILURES = (
     SetupError,

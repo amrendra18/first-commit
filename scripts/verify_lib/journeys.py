@@ -21,6 +21,8 @@ from verify_lib.core import (
 )
 
 CANARY = "verify-canary-private-name"
+USER_LIST = ".config/first-commit/private-values.txt"
+USER_LIST_TIGHTENED = f"Private values: set ~/{USER_LIST} to mode 600."
 NAMED_FILE = f"{CANARY}-notes.txt"
 ZERO = "0" * 40
 # No privacy rule matches a Slack token, so only Gitleaks can block this message.
@@ -199,12 +201,57 @@ def feature_privacy(run: Run) -> list[str]:
     before = values.read_text("utf-8")
     values.write_text(before + CANARY + "\n", "utf-8")
     try:
-        return [*_private_content(run, project), *_private_file_name(run, project)]
+        observed = [
+            *_private_content(run, project),
+            *_private_file_name(run, project),
+        ]
     finally:
         for name in ("notes.txt", NAMED_FILE):
             run.command(["git", "reset", "-q", "--", name], project)
             (project / name).unlink(missing_ok=True)
         values.write_text(before, "utf-8")
+    return [*observed, *_user_list(run, project)]
+
+
+# The canary is only in the user-level list, a link to a mode 644 file.
+def _user_list(run: Run, project: Path) -> list[str]:
+    link = Path(run.environment["HOME"]) / USER_LIST
+    target = run.work / "user-private-values.txt"
+    target.write_text(CANARY + "\n", "utf-8")
+    target.chmod(0o644)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+    try:
+        (project / "notes.txt").write_text(f"written by {CANARY}\n", "utf-8")
+        run.command(["git", "add", "notes.txt"], project, expect=0)
+        code, output = git_commit(run, project)
+        mode = target.stat().st_mode & 0o777
+    finally:
+        run.command(["git", "reset", "-q", "--", "notes.txt"], project)
+        (project / "notes.txt").unlink(missing_ok=True)
+        link.unlink()
+        target.unlink()
+    printed = output.count(CANARY)
+    tightened = output.count(USER_LIST_TIGHTENED)
+    return [
+        blocked(code, "a commit with a value only in the user-level list"),
+        require(
+            condition="privacy.private-literal" in output,
+            observed="privacy.private-literal reported",
+        ),
+        require(
+            condition=printed == 0,
+            observed=f"the private value was never printed (count {printed})",
+        ),
+        require(
+            condition=mode == PRIVATE_MODE,
+            observed=f"the link's target is now mode {mode:03o}",
+        ),
+        require(
+            condition=tightened == 1,
+            observed=f"'{USER_LIST_TIGHTENED}' printed {tightened} time(s)",
+        ),
+    ]
 
 
 def feature_message(run: Run) -> list[str]:

@@ -34,7 +34,7 @@ from first_commit.hooks import HOOK_TYPES, INVALID_RULE, hook_problems
 from first_commit.models import GIT_CONFIG_PATH, GIT_HOOKS_PATH, SetupError
 from first_commit.paths import PathError
 from first_commit.policy import PRIVATE_VALUES_PATH
-from first_commit.private_values import PRIVATE_VALUES_SUBJECT
+from first_commit.private_values import PRIVATE_VALUES_SUBJECT, user_values_path
 from first_commit.scanner_install import local_scanner_failed
 from first_commit.setup_command import (
     HOOK_CONFIG,
@@ -86,6 +86,7 @@ class SetupPlan:
     existing_hooks: bool
     contributor_exists: bool
     private_values_exist: bool
+    user_values_exist: bool
     install_scanner: bool
     scanner_checked: bool
     git: GitFacts
@@ -301,6 +302,7 @@ def plan_setup(
         existing_hooks=existing_hooks,
         contributor_exists=load_contributor(root) is not None,
         private_values_exist=os.path.lexists(root / PRIVATE_VALUES_PATH),
+        user_values_exist=os.path.lexists(user_values_path()),
         install_scanner=_scanner_missing(root, check_scanner=check_scanner),
         scanner_checked=check_scanner,
         git=git,

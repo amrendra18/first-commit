@@ -64,17 +64,14 @@ def read_regular_bytes(
     except OSError as error:
         raise PathError("File cannot be read.") from error
     try:
-        content = _read_open_file(descriptor, max_bytes, forbidden_mode_bits)
+        return read_open_file(descriptor, max_bytes, forbidden_mode_bits)
     except OSError as error:
         raise PathError("File cannot be read.") from error
     finally:
         os.close(descriptor)
-    if len(content) > max_bytes:
-        raise PathSizeError("File exceeds the size limit.")
-    return content
 
 
-def _read_open_file(descriptor: int, max_bytes: int, forbidden_mode_bits: int) -> bytes:
+def read_open_file(descriptor: int, max_bytes: int, forbidden_mode_bits: int) -> bytes:
     metadata = os.fstat(descriptor)
     if not stat.S_ISREG(metadata.st_mode):
         raise PathError("Path is not a regular file.")
@@ -90,7 +87,10 @@ def _read_open_file(descriptor: int, max_bytes: int, forbidden_mode_bits: int) -
             break
         chunks.append(chunk)
         remaining -= len(chunk)
-    return b"".join(chunks)
+    content = b"".join(chunks)
+    if len(content) > max_bytes:
+        raise PathSizeError("File exceeds the size limit.")
+    return content
 
 
 def create_exclusive(path: Path, content: bytes, mode: int) -> None:

@@ -49,7 +49,12 @@ RESERVED_TEST_SUFFIXES = (".invalid", ".test")
 # certificate formats "<name>@openssh.com" or "<name>@libssh.org", which match
 # the address shape without being anyone's address.
 PROTOCOL_DOMAINS = {"openssh.com", "libssh.org"}
-GITHUB_OWNER_PREFIX = re.compile(r"(?:https?://|ssh://git@|git@)github\.com[/:]$")
+GITHUB_OWNER_PREFIX = re.compile(r"(?:https?://|ssh://git@|git@)github\.com[/:]\Z")
+# GitHub owner names hold letters, digits, and hyphens, at most 39 of them.
+MAX_OWNER = 39
+OWNER = re.compile(r"[a-z0-9-]{1,39}")
+OWNER_END = re.compile(r"[a-z0-9-]+\Z")
+OWNER_START = re.compile(r"[a-z0-9-]+")
 GITHUB_SSH_USER = "git" + "@" + "github.com"
 UTF16_MARKS = (b"\xff\xfe", b"\xfe\xff")
 # Every private key of one type starts with the same line, so its exceptions hash
@@ -144,12 +149,20 @@ def _approved_lines(
     return approved
 
 
+# The value may sit anywhere inside the owner segment, such as `<value>-labs`.
 def _github_owner(normalized: str, start: int, value: str) -> bool:
     end = start + len(value)
-    if normalized[end : end + 1] != "/":
+    before = OWNER_END.search(normalized, max(0, start - MAX_OWNER), start)
+    after = OWNER_START.match(normalized, end, end + MAX_OWNER)
+    first = before.start() if before else start
+    last = after.end() if after else end
+    if (
+        OWNER.fullmatch(normalized, first, last) is None
+        or normalized[last : last + 1] != "/"
+    ):
         return False
     return (
-        GITHUB_OWNER_PREFIX.search(normalized[max(0, start - 32) : start]) is not None
+        GITHUB_OWNER_PREFIX.search(normalized[max(0, first - 32) : first]) is not None
     )
 
 

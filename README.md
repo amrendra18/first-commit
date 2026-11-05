@@ -13,7 +13,7 @@ on your machine, before it becomes history.
 Install it into its own folder, then start a project:
 
 ```sh
-python3 -m venv /path/first-commit && /path/first-commit/bin/python -m pip install 'first-commit[setup] @ git+https://github.com/amrendra18/first-commit.git@v0.4.0'
+python3 -m venv /path/first-commit && /path/first-commit/bin/python -m pip install 'first-commit[setup] @ git+https://github.com/amrendra18/first-commit.git@v0.5.0'
 mkdir my-project && cd my-project && /path/first-commit/bin/first-commit setup
 ```
 
@@ -76,13 +76,13 @@ repositories still need server-side rules; see [SECURITY.md](SECURITY.md).
 
 ## Install
 
-The quick start installs release v0.4.0 over HTTPS. To check the release
+The quick start installs release v0.5.0 over HTTPS. To check the release
 first, compare the commit SHA this prints with the
-[release page](https://github.com/amrendra18/first-commit/releases/tag/v0.4.0).
+[release page](https://github.com/amrendra18/first-commit/releases/tag/v0.5.0).
 If they differ, do not install.
 
 ```sh
-git ls-remote https://github.com/amrendra18/first-commit 'v0.4.0^{}'
+git ls-remote https://github.com/amrendra18/first-commit 'v0.5.0^{}'
 ```
 
 To install over SSH, with an SSH key on your GitHub account:
@@ -90,7 +90,7 @@ To install over SSH, with an SSH key on your GitHub account:
 ```sh
 python3 -m venv /path/first-commit
 /path/first-commit/bin/python -m pip install \
-  'first-commit[setup] @ git+ssh://git@github.com/amrendra18/first-commit.git@v0.4.0'
+  'first-commit[setup] @ git+ssh://git@github.com/amrendra18/first-commit.git@v0.5.0'
 ```
 
 The rest of this page calls the tool through a variable. Set it in each new
@@ -101,7 +101,7 @@ FIRST_COMMIT=/path/first-commit/bin/first-commit
 "$FIRST_COMMIT" version
 ```
 
-The last command prints `0.4.0`. `--version` does the same.
+The last command prints `0.5.0`. `--version` does the same.
 
 ## Start a project
 
@@ -191,13 +191,15 @@ pre-commit run first-commit-check --hook-stage manual --all-files
 pre-commit run first-commit-doctor --hook-stage manual --all-files
 ```
 
-Both are read-only and offline. Add `--format json` for JSON.
+Both are offline and read-only
+([two exceptions](ARCHITECTURE.md#security-rules)). Add `--format json` for JSON.
 
 ## Project settings
 
-1. **Private values.** List words that must never be committed, such as your
-   employer or your home town, one per line in the ignored
-   `.local/first-commit/private-values.txt`.
+1. **Private values.** Words never to commit, such as your employer, one per
+   line in the ignored `.local/first-commit/private-values.txt`, or for every
+   project in `~/.config/first-commit/private-values.txt`
+   ([details](ARCHITECTURE.md#private-values)).
 2. **Project facts.** `.repo-policy.json` holds approved public emails,
    forbidden paths, and reviewed exceptions. No field turns off a check.
    Stage an edit to it before the commit that needs it. The fields are in

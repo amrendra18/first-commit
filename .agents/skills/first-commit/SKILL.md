@@ -17,7 +17,10 @@ fields.
 2. Run setup only with authorization for Git initialization, local
    configuration, dependency installation, and hooks. Never stage, commit,
    change remotes, or publish without permission.
-3. Run `first-commit doctor` and `first-commit check`; both are read-only.
+3. Run `first-commit doctor` and `first-commit check`; both are read-only,
+   except that `check` and the hooks remove group and other access from your
+   user-level private-values list when you own it
+   ([Private values](../../../ARCHITECTURE.md#private-values)).
 4. Keep contributor identity in the ignored local record. Never read
    private-key contents or print matched private content.
 

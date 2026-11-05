@@ -386,6 +386,17 @@ def is_tracked(root: Path, relative_path: str) -> bool:
     return bool(run_git(root, ("ls-files", "-z", "--cached", "--", relative_path)))
 
 
+# Git lists the main worktree first; a bare main repository has none.
+# The list is split on newlines, so a worktree path holding a newline is misread.
+def main_worktree(root: Path) -> Path | None:
+    first = run_git(root, ("worktree", "list", "--porcelain")).split(b"\n\n")[0]
+    lines = first.split(b"\n")
+    if not lines[0].startswith(b"worktree ") or b"bare" in lines[1:]:
+        return None
+    main = Path(os.fsdecode(lines[0].removeprefix(b"worktree "))).resolve()
+    return None if main == root.resolve() else main
+
+
 def _ignored_by_gitignore(root: Path, relative_path: str) -> bool:
     output = _execute(
         root,
