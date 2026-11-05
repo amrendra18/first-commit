@@ -68,17 +68,13 @@ Added:
 
 Changed:
 
-1. Security: `bin/first-commit` no longer runs a `first_commit/cli.py` from the
-   current folder, so a repository cannot replace a checkout's launcher. A pip
-   install was never affected.
+1. Security: `bin/first-commit` no longer imports a `first_commit` package from
+   the current folder. A pip install was never affected.
 2. The README installs the command into `~/.local/bin` and runs
    `first-commit` from PATH; the `FIRST_COMMIT` shell variable is gone. It
    names what install writes, its network use, and the state folder
    `~/.config/first-commit` with its `XDG_CONFIG_HOME` override.
-3. The README no longer says the hooks stop an unsigned commit, or that the
-   push checks pushed file contents for private values.
-   [Known gaps](ARCHITECTURE.md#threats-and-known-gaps) names both. The
-   README covers clones and upgrades with `--hooks installed`.
+3. The README covers clones and upgrades with `--hooks installed`.
 4. `scripts/release` prints the release steps in order: push the branch, wait
    for a green CI run on that commit on Linux and macOS, then push the tag.
 5. Every Git process first-commit or Gitleaks starts gets fixed display
@@ -95,6 +91,8 @@ Changed:
    setup-naming fix lines point to the main worktree.
 
 ## 0.5.0
+
+Never tagged. These changes ship in 0.6.0.
 
 1. A user-level private-values list applies to every project:
    `~/.config/first-commit/private-values.txt`, or

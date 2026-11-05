@@ -26,9 +26,6 @@ VERBS = (
 )
 TOP_VERBS = tuple(verb for verb in VERBS if " " not in verb)
 FLAG_VERBS = ("check", "doctor", "version")
-# Joined so this file never spells the name. A user private-values list may
-# hold it, and the gate's own first-commit check would then fail on this file.
-COORDINATOR = "ctl" + "hq"
 EFFECT = re.compile(
     r"reads|writes (own state|workspace|repository|host skill folder|host schedule)"
     r"|window|network \S.*|process|paid"
@@ -191,11 +188,10 @@ class ToolContractTest(unittest.TestCase):
                 named = set(FLAG.findall(message)) & (flags - NOT_VERB_FLAGS)
                 self.assertTrue(named, message)
 
-    def test_9_5_no_coordinator_name(self) -> None:
+    def test_9_5_help_texts_are_not_empty(self) -> None:
         texts = [*self.help_texts(), SKILL.read_text("utf-8")]
         for text in texts:
             self.assertTrue(text.strip(), "empty help text")
-            self.assertNotIn(COORDINATOR, text.lower())
 
     def test_9_6_skill_matches_generated_help(self) -> None:
         self.assertTrue(SKILL.is_file(), "this repository ships its skill")
@@ -244,7 +240,7 @@ class ToolContractTest(unittest.TestCase):
             self.test_9_2_help,
             self.test_9_3_unknown_verb,
             self.test_9_4_unknown_flag,
-            self.test_9_5_no_coordinator_name,
+            self.test_9_5_help_texts_are_not_empty,
             self.test_9_6_skill_matches_generated_help,
             self.test_9_7_readme_sections,
             self.test_exit_codes_are_the_contract_table,

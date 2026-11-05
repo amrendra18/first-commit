@@ -145,8 +145,8 @@ Every command keeps these rules. Changing one is a design change.
    `GIT_CONFIG_COUNT`, which beat every configuration file: no color, the root
    commit shown, no signature lines, the default header, date, and path prefixes, the default
    512 MiB binary-file size, and no user attributes file. Relative `PATH`
-   entries are dropped. `bin/first-commit` starts Python with `-P`, so a file
-   in the current folder cannot replace the tool.
+   entries are dropped. `bin/first-commit` starts Python with `-P`, so the
+   current folder is not on the import path.
 5. Paths are normalized and confined before reading. Reads, file counts,
    findings, and messages are bounded; see [Limits](#limits).
 6. Pinned hooks, the default, are pinned to a 40-character commit SHA. Setup
