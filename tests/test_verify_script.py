@@ -403,6 +403,23 @@ class VerifyScriptTest(unittest.TestCase):
                 )
 
 
+class ScratchHomeTest(unittest.TestCase):
+    def test_the_scratch_home_names_the_default_branch_the_journeys_push(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = prepare.prepare_run("python3", Path(directory), ("/usr/bin", []))
+            found = subprocess.run(
+                [
+                    *("git", "config", "--file"),
+                    str(Path(run.environment["HOME"]) / ".gitconfig"),
+                    "init.defaultBranch",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual("main", found.stdout.strip())
+
+
 class FailedFeatureOutputTest(unittest.TestCase):
     def run_failing(self, log: list[str]) -> str:
         def fail(run: object) -> list[str]:

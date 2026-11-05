@@ -127,7 +127,8 @@ def prepare_run(python: str, work: Path, search_path: tuple[str, list[str]]) -> 
     home = work / "home"
     home.mkdir()
     (home / ".gitconfig").write_text(
-        f'[url "{work / "source"}"]\n\tinsteadOf = {HTTPS}\n\tinsteadOf = {SSH}\n',
+        f'[url "{work / "source"}"]\n\tinsteadOf = {HTTPS}\n\tinsteadOf = {SSH}\n'
+        "[init]\n\tdefaultBranch = main\n",
         "utf-8",
     )
     environment = {
