@@ -403,5 +403,45 @@ class VerifyScriptTest(unittest.TestCase):
                 )
 
 
+class FailedFeatureOutputTest(unittest.TestCase):
+    def run_failing(self, log: list[str]) -> str:
+        def fail(run: object) -> list[str]:
+            del run
+            raise core.FeatureFailedError("step exited 1")
+
+        with tempfile.TemporaryDirectory() as directory:
+            run = core.Run(work=Path(directory), python="python3", environment={})
+            run.log.extend(
+                entry.format(work=run.work, home=Path.home()) for entry in log
+            )
+            output = io.StringIO()
+            with (
+                patch.dict(cli.RUNNERS, {"probe": fail}),
+                redirect_stdout(output),
+            ):
+                cli.run_feature(run, "probe", require_github=False)
+        return output.getvalue()
+
+    def test_a_failed_feature_prints_its_last_commands(self) -> None:
+        entries = [f"$ command {n}\n[exit 1]\nsaid {n}" for n in range(9)]
+        output = self.run_failing(entries)
+        self.assertIn("probe: failed", output)
+        self.assertIn("said 8", output)
+        self.assertIn(f"said {9 - cli.FAILED_COMMANDS_SHOWN}", output)
+        self.assertNotIn(f"said {8 - cli.FAILED_COMMANDS_SHOWN}", output)
+
+    def test_printed_commands_hide_the_work_and_home_folders(self) -> None:
+        output = self.run_failing(["$ command\n[exit 1]\nin {work}/a and {home}/b"])
+        self.assertIn("in <work>/a and ~/b", output)
+        self.assertNotIn(str(Path.home()), output)
+
+    def test_a_long_command_output_is_cut_to_its_last_lines(self) -> None:
+        lines = "\n".join(f"line {n}" for n in range(500))
+        output = self.run_failing([f"$ command\n[exit 1]\n{lines}"])
+        self.assertIn("line 499", output)
+        self.assertNotIn("line 0\n", output)
+        self.assertLess(len(output.splitlines()), cli.FAILED_LINES_SHOWN + 5)
+
+
 if __name__ == "__main__":
     unittest.main()
