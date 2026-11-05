@@ -51,7 +51,7 @@ from verify_lib.push_journey import feature_push
 from verify_lib.remove_journey import feature_remove
 from verify_lib.report import finish
 
-FAILED_COMMANDS_SHOWN = 6
+FAILED_COMMANDS_SHOWN = 12
 FAILED_LINES_SHOWN = 80
 ENTRY = PROJECT / "scripts/verify"
 FEATURES = {
@@ -235,7 +235,7 @@ def run_feature(run: Run, name: str, *, require_github: bool) -> FeatureResult:
         f"{name}: {result.state} ({took} s)"
         + (f" - {redact(result.reason, run)}" if result.reason else "")
     )
-    if result.state == "failed":
+    if result.state == "failed" and run.log:
         print(_last_commands(run))
     return result
 

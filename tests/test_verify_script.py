@@ -407,12 +407,14 @@ class ScratchHomeTest(unittest.TestCase):
     def test_the_scratch_home_names_the_default_branch_the_journeys_push(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run = prepare.prepare_run("python3", Path(directory), ("/usr/bin", []))
+            project = Path(directory) / "project"
+            environment = {**run.environment, "GIT_CONFIG_NOSYSTEM": "1"}
+            subprocess.run(
+                ["git", "init", "-q", str(project)], env=environment, check=True
+            )
             found = subprocess.run(
-                [
-                    *("git", "config", "--file"),
-                    str(Path(run.environment["HOME"]) / ".gitconfig"),
-                    "init.defaultBranch",
-                ],
+                ["git", "-C", str(project), "symbolic-ref", "--short", "HEAD"],
+                env=environment,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -440,12 +442,15 @@ class FailedFeatureOutputTest(unittest.TestCase):
         return output.getvalue()
 
     def test_a_failed_feature_prints_its_last_commands(self) -> None:
-        entries = [f"$ command {n}\n[exit 1]\nsaid {n}" for n in range(9)]
+        entries = [f"$ command {n}\n[exit 1]\nsaid {n}\n" for n in range(20)]
         output = self.run_failing(entries)
         self.assertIn("probe: failed", output)
-        self.assertIn("said 8", output)
-        self.assertIn(f"said {9 - cli.FAILED_COMMANDS_SHOWN}", output)
-        self.assertNotIn(f"said {8 - cli.FAILED_COMMANDS_SHOWN}", output)
+        self.assertIn("said 19\n", output)
+        self.assertIn("said 8\n", output)
+        self.assertNotIn("said 7\n", output)
+
+    def test_a_failed_feature_with_no_commands_prints_only_its_line(self) -> None:
+        self.assertEqual(1, len(self.run_failing([]).splitlines()))
 
     def test_printed_commands_hide_the_work_and_home_folders(self) -> None:
         output = self.run_failing(["$ command\n[exit 1]\nin {work}/a and {home}/b"])
